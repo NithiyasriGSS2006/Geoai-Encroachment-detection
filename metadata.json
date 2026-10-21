@@ -1,0 +1,6 @@
+{
+  "name": "GeoAI Water Encroachment Analysis",
+  "description": "Velachery, Chennai — Water Change, Persistent Water, LULC & Potential Encroachment Analysis with interactive GeoTIFF raster visualization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

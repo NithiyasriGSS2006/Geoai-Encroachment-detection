@@ -1,0 +1,10 @@
+LULC Value,LULC Class,Pixel Count,Area (m2),Area (ha),Percentage of Water-Loss Area
+0,Water,0,0.0,0.0,0.0
+1,Trees,0,0.0,0.0,0.0
+2,Grass,0,0.0,0.0,0.0
+3,Flooded vegetation,0,0.0,0.0,0.0
+4,Crops,0,0.0,0.0,0.0
+5,Shrub and scrub,0,0.0,0.0,0.0
+6,Built-up,192,19200.0,1.92,100.0
+7,Bare ground,0,0.0,0.0,0.0
+8,Snow and ice,0,0.0,0.0,0.0

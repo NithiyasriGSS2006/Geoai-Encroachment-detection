@@ -1,0 +1,22 @@
+Parameter,Value
+Historical Year,2017
+Current Year,2024
+Pixel Size (m),10.0
+Pixel Area (m2),100.0
+Historical Water Pixels,2178
+Historical Water Area (ha),21.78
+Current Water Pixels,1950
+Current Water Area (ha),19.5
+Water Loss Pixels,248
+Water Loss Area (m2),24800.0
+Water Loss (ha),2.48
+Water Gain Pixels,20
+Water Gain Area (m2),2000.0
+Water Gain (ha),0.2
+Persistent Water Pixels,1930
+Persistent Water (ha),19.3
+Net Water Change (ha),-2.28
+Percentage Change (%),-10.46831955922865
+Persistent Non-water Pixels,16114
+Water Loss Transition Pixels,248
+Water Gain Transition Pixels,20

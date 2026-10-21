@@ -1,0 +1,81 @@
+Velachery GeoAI Water Monitor - File & Folder Architecture Guide
+==================================================================
+
+Frontend Folder (frontend/)
+--------------------------
+frontend/src/
+    App.tsx
+        Main React application coordinator and workflow state manager.
+    main.tsx
+        Browser entry point mounting App onto root DOM element.
+    index.css
+        Tailwind CSS imports, map styles, and custom UI rules.
+
+frontend/src/components/
+    VelacheryGeoMap.tsx
+        Interactive Leaflet GIS map with raster overlays & legend controls.
+    WaterChangeStepView.tsx
+        Step view for historical water loss/gain comparison and transition rasters.
+    MultiYearUploadPanel.tsx
+        Multi-year water mask uploader and reference dataset switcher.
+    IntermediateResultsGrid.tsx
+        Preview cards grid for stage sub-rasters.
+    ProcessingStatusPanel.tsx
+        Progress & execution state panel for each pipeline stage.
+    RasterMetadataPanel.tsx
+        GeoTIFF spatial resolution, CRS, bounds, and pixel dimension viewer.
+
+frontend/src/routes/
+    index.ts
+        Navigation routes and workflow step metadata definitions.
+
+frontend/src/utils/
+    geotiffEngine.ts
+        Geospatial processing engine, GeoTIFF parser/builder, and statistics calculator.
+
+frontend/index.html
+    Vite entry HTML page.
+
+frontend/vite.config.ts
+    Vite config with API proxy rule for backend port 3000.
+
+frontend/package.json
+    Frontend dependencies & build scripts.
+
+
+Backend Folder (backend/)
+-------------------------
+backend/server.ts
+    Express server entry point providing REST API endpoints and executing GeoAI Python scripts.
+
+backend/scripts/
+    water_change.py
+        GeoAI Python script calculating water loss, water gain, and persistent water.
+    persistent_check.py
+        GeoAI Python script detecting persistent vs seasonal water recedes.
+    lulc_analysis.py
+        GeoAI Python script mapping Land Use Land Cover conversions over dried lakebeds.
+    potential_encroachment.py
+        GeoAI Python script producing potential urban encroachment GeoTIFFs.
+    Velachery_LULC_2024.tif & Velachery_LULC_2026.tif
+        Reference LULC rasters used by the Python scripts.
+
+backend/data/
+    water_masks_tif/
+        Input multi-year water mask GeoTIFF files (2017, 2020, 2023, 2024, 2026).
+    gisoutputs/
+        Generated output GeoTIFF files and CSV report files.
+
+backend/requirements.txt
+    Python GIS dependencies (rasterio, numpy, geopandas, shapely, flask).
+
+backend/package.json
+    Backend Node package manifest & Python runner scripts.
+
+
+Root Folder
+-----------
+package.json
+    Root project manifest coordinating frontend and backend servers.
+README.md
+    Comprehensive guide, folder breakdown, and execution instructions.

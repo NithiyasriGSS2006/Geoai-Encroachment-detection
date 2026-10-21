@@ -1,0 +1,67 @@
+[
+    {
+        "image": "satellite_2017.png",
+        "year": 2017,
+        "aoi_width": 218,
+        "aoi_height": 84,
+        "model_input_size": 128,
+        "threshold": 0.9,
+        "total_pixels": 18312,
+        "water_pixels": 2178,
+        "non_water_pixels": 16134,
+        "png_mask": "C:\\Users\\nithi\\Downloads\\project_geoAI (2) - Copy\\project_geoAI\\backend\\data\\gisoutputs\\png_water_masks\\satellite_2017_mask.png",
+        "geotiff": "C:\\Users\\nithi\\Downloads\\project_geoAI (2) - Copy\\project_geoAI\\backend\\data\\water_masks_tif\\water_2017.tif"
+    },
+    {
+        "image": "satellite_2020.png",
+        "year": 2020,
+        "aoi_width": 218,
+        "aoi_height": 84,
+        "model_input_size": 128,
+        "threshold": 0.9,
+        "total_pixels": 18312,
+        "water_pixels": 2027,
+        "non_water_pixels": 16285,
+        "png_mask": "C:\\Users\\nithi\\Downloads\\project_geoAI (2) - Copy\\project_geoAI\\backend\\data\\gisoutputs\\png_water_masks\\satellite_2020_mask.png",
+        "geotiff": "C:\\Users\\nithi\\Downloads\\project_geoAI (2) - Copy\\project_geoAI\\backend\\data\\water_masks_tif\\water_2020.tif"
+    },
+    {
+        "image": "satellite_2023.png",
+        "year": 2023,
+        "aoi_width": 218,
+        "aoi_height": 84,
+        "model_input_size": 128,
+        "threshold": 0.9,
+        "total_pixels": 18312,
+        "water_pixels": 1983,
+        "non_water_pixels": 16329,
+        "png_mask": "C:\\Users\\nithi\\Downloads\\project_geoAI (2) - Copy\\project_geoAI\\backend\\data\\gisoutputs\\png_water_masks\\satellite_2023_mask.png",
+        "geotiff": "C:\\Users\\nithi\\Downloads\\project_geoAI (2) - Copy\\project_geoAI\\backend\\data\\water_masks_tif\\water_2023.tif"
+    },
+    {
+        "image": "satellite_2024.png",
+        "year": 2024,
+        "aoi_width": 218,
+        "aoi_height": 84,
+        "model_input_size": 128,
+        "threshold": 0.9,
+        "total_pixels": 18312,
+        "water_pixels": 1950,
+        "non_water_pixels": 16362,
+        "png_mask": "C:\\Users\\nithi\\Downloads\\project_geoAI (2) - Copy\\project_geoAI\\backend\\data\\gisoutputs\\png_water_masks\\satellite_2024_mask.png",
+        "geotiff": "C:\\Users\\nithi\\Downloads\\project_geoAI (2) - Copy\\project_geoAI\\backend\\data\\water_masks_tif\\water_2024.tif"
+    },
+    {
+        "image": "satellite_2026.png",
+        "year": 2026,
+        "aoi_width": 218,
+        "aoi_height": 84,
+        "model_input_size": 128,
+        "threshold": 0.9,
+        "total_pixels": 18312,
+        "water_pixels": 2210,
+        "non_water_pixels": 16102,
+        "png_mask": "C:\\Users\\nithi\\Downloads\\project_geoAI (2) - Copy\\project_geoAI\\backend\\data\\gisoutputs\\png_water_masks\\satellite_2026_mask.png",
+        "geotiff": "C:\\Users\\nithi\\Downloads\\project_geoAI (2) - Copy\\project_geoAI\\backend\\data\\water_masks_tif\\water_2026.tif"
+    }
+]

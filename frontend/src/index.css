@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    background: linear-gradient(180deg, #dfeaf4 0%, #edf4fa 100%);
+    color: #0f172a;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Crisp raster pixel rendering on Leaflet image overlays */
+.leaflet-image-layer.geotiff-raster-layer,
+.leaflet-pane .geotiff-raster-layer {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.leaflet-container {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background-color: #132d3d;
+}
+
+.leaflet-control-attribution {
+  font-size: 10px !important;
+  background: rgba(15, 23, 42, 0.85) !important;
+  color: #94a3b8 !important;
+  backdrop-filter: blur(4px);
+}
+
+.leaflet-control-attribution a {
+  color: #38bdf8 !important;
+}
+
+.app-theme [class~="bg-slate-950"] { background-color: #f1f5f9; }
+.app-theme [class~="bg-slate-950/85"] { background-color: rgb(241 245 249 / 85%); }
+.app-theme [class~="bg-slate-950/80"] { background-color: rgb(241 245 249 / 80%); }
+.app-theme [class~="bg-slate-950/90"] { background-color: rgb(241 245 249 / 90%); }
+.app-theme [class~="bg-slate-950/75"] { background-color: rgb(241 245 249 / 75%); }
+.app-theme [class~="bg-slate-950/70"] { background-color: rgb(241 245 249 / 70%); }
+.app-theme [class~="bg-slate-950/60"] { background-color: rgb(241 245 249 / 60%); }
+.app-theme [class~="bg-slate-950/40"] { background-color: rgb(241 245 249 / 40%); }
+.app-theme [class~="bg-slate-950/30"] { background-color: rgb(241 245 249 / 30%); }
+.app-theme [class~="bg-slate-900"] { background-color: #fff; }
+.app-theme [class~="bg-slate-900/90"] { background-color: rgb(255 255 255 / 90%); }
+.app-theme [class~="bg-slate-900/80"] { background-color: rgb(255 255 255 / 80%); }
+.app-theme [class~="bg-slate-900/70"] { background-color: rgb(255 255 255 / 70%); }
+.app-theme [class~="bg-slate-900/60"] { background-color: rgb(255 255 255 / 60%); }
+.app-theme [class~="bg-slate-900/50"] { background-color: rgb(255 255 255 / 50%); }
+.app-theme [class~="bg-slate-900/40"] { background-color: rgb(255 255 255 / 40%); }
+.app-theme [class~="bg-slate-900/30"] { background-color: rgb(255 255 255 / 30%); }
+.app-theme [class~="bg-slate-800"] { background-color: #f1f5f9; }
+.app-theme [class~="bg-slate-800/90"] { background-color: rgb(241 245 249 / 90%); }
+.app-theme [class~="bg-slate-800/50"] { background-color: rgb(241 245 249 / 50%); }
+.app-theme [class~="bg-slate-800/40"] { background-color: rgb(241 245 249 / 40%); }
+.app-theme [class~="bg-slate-700"] { background-color: #e2e8f0; }
+.app-theme [class~="bg-cyan-950/40"] { background-color: rgb(207 250 254 / 70%); }
+.app-theme [class~="bg-cyan-950/35"] { background-color: rgb(207 250 254 / 70%); }
+.app-theme [class~="bg-cyan-950/25"] { background-color: rgb(207 250 254 / 60%); }
+.app-theme [class~="bg-emerald-950/25"] { background-color: rgb(220 252 231 / 75%); }
+.app-theme [class~="bg-rose-950/50"] { background-color: rgb(255 228 230 / 80%); }
+.app-theme [class~="bg-rose-950/40"] { background-color: rgb(255 228 230 / 70%); }
+.app-theme [class~="bg-slate-900"]:hover,
+.app-theme [class~="bg-slate-900/60"]:hover { background-color: #f8fafc; }
+.app-theme [class~="bg-slate-800"]:hover { background-color: #e2e8f0; }
+.app-theme [class~="bg-slate-700"]:hover { background-color: #cbd5e1; }
+
+.app-theme [class~="text-slate-100"],
+.app-theme [class~="text-slate-200"],
+.app-theme [class~="text-white"] { color: #0f172a; }
+.app-theme [class~="text-slate-300"] { color: #334155; }
+.app-theme [class~="text-slate-400"] { color: #475569; }
+.app-theme [class~="text-slate-500"] { color: #64748b; }
+.app-theme [class~="text-slate-600"] { color: #475569; }
+.app-theme [class~="text-slate-700"] { color: #334155; }
+.app-theme [class~="text-slate-950"] { color: #020617; }
+.app-theme [class~="text-cyan-200"],
+.app-theme [class~="text-cyan-300"],
+.app-theme [class~="text-cyan-400"] { color: #0e7490; }
+.app-theme [class~="text-emerald-200"],
+.app-theme [class~="text-emerald-300"],
+.app-theme [class~="text-emerald-400"] { color: #047857; }
+.app-theme [class~="text-rose-300"],
+.app-theme [class~="text-rose-400"] { color: #be123c; }
+.app-theme [class~="text-amber-300"],
+.app-theme [class~="text-amber-400"] { color: #b45309; }
+
+.app-theme [class~="border-slate-900"],
+.app-theme [class~="border-slate-800"],
+.app-theme [class~="border-slate-800/80"],
+.app-theme [class~="border-slate-800/90"],
+.app-theme [class~="border-slate-800/70"],
+.app-theme [class~="border-slate-700"] { border-color: #cbd5e1; }
+.app-theme [class~="divide-slate-800/70"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: #e2e8f0;
+}
+.app-theme [class~="from-slate-950"] {
+  background-image: linear-gradient(to right, #fff, #f1f5f9, #eff6ff);
+}
