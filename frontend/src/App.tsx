@@ -40,6 +40,7 @@ import {
   PERSISTENT_WATER_LEGEND,
   LULC_LEGEND,
   ENCROACHMENT_LEGEND,
+  SLOPE_LEGEND,
   parseGeoTiffBuffer,
   detectYearFromFilename,
   validateMultiYearRasters,
@@ -51,6 +52,11 @@ import { RasterMetadataPanel } from './components/RasterMetadataPanel';
 import { ProcessingStatusPanel } from './components/ProcessingStatusPanel';
 import { MultiYearUploadPanel } from './components/MultiYearUploadPanel';
 import { WaterChangeStepView } from './components/WaterChangeStepView';
+import {
+  AnalysisPipelinePanel,
+  AnalysisPipelineProgress,
+  AnalysisPipelineStageResult,
+} from './components/AnalysisPipelinePanel';
 import { IntermediateResultsGrid } from './components/IntermediateResultsGrid';
 import { TamilNaduEmblem } from './components/TamilNaduEmblem';
 import { CmdaBuildingBanner } from './components/CmdaBuildingBanner';
@@ -112,7 +118,7 @@ const WORKFLOW_STEPS: {
     numberLabel: '⑦',
     title: 'Step 6: Water-Flow Impact',
     shortTitle: 'Water-Flow Impact',
-    filename: 'relative_flood_vulnerability_display.tif',
+    filename: 'relative_flood_vulnerability.tif',
   },
   {
     id: 7,
@@ -168,28 +174,28 @@ const WATER_FLOW_RASTER_CONFIG: {
   {
     filename: 'slope_degrees.tif',
     title: 'Terrain Slope',
-    subtitle: 'Slope in degrees derived from the depression-filled DEM.',
-    legend: [],
+    subtitle: 'Slope angle classes: green is flatter terrain; orange and red are steeper.',
+    legend: SLOPE_LEGEND,
   },
   {
     filename: 'flow_direction.tif',
     title: 'D8 Flow Direction',
-    subtitle: 'Terrain-derived D8 flow direction codes.',
+    subtitle: 'Arrows show the terrain-derived direction water flows from each sampled cell.',
     legend: [
-      { value: 1, label: 'East', color: '#ff0000' },
-      { value: 2, label: 'Southeast', color: '#ffa500' },
-      { value: 4, label: 'South', color: '#ffff00' },
-      { value: 8, label: 'Southwest', color: '#00c800' },
-      { value: 16, label: 'West', color: '#00c8ff' },
-      { value: 32, label: 'Northwest', color: '#0000ff' },
-      { value: 64, label: 'North', color: '#a020f0' },
-      { value: 128, label: 'Northeast', color: '#ff00ff' },
+      { value: 1, label: 'East', color: '#ef4444' },
+      { value: 2, label: 'Northeast', color: '#f97316' },
+      { value: 4, label: 'North', color: '#eab308' },
+      { value: 8, label: 'Northwest', color: '#22c55e' },
+      { value: 16, label: 'West', color: '#06b6d4' },
+      { value: 32, label: 'Southwest', color: '#3b82f6' },
+      { value: 64, label: 'South', color: '#a855f7' },
+      { value: 128, label: 'Southeast', color: '#ec4899' },
     ],
   },
   {
-    filename: 'flow_accumulation.tif',
-    title: 'Flow Accumulation',
-    subtitle: 'Number of upstream cells contributing flow.',
+    filename: 'flow_accumulation_log_display.tif',
+    title: 'Log-Scaled Flow Accumulation',
+    subtitle: 'Log(1 + upstream contributing cell count); highlights low and high flow accumulation.',
     legend: [],
   },
   {
@@ -205,24 +211,6 @@ const WATER_FLOW_RASTER_CONFIG: {
     filename: 'relative_flood_vulnerability.tif',
     title: 'Relative Flood Vulnerability',
     subtitle: 'Preliminary terrain-and-drainage screening classes (1–4).',
-    legend: [
-      { value: 0, label: 'Outside analysis', color: '#ffffff' },
-      { value: 1, label: 'Low', color: '#00aa00' },
-      { value: 2, label: 'Moderate', color: '#ffdc00' },
-      { value: 3, label: 'High', color: '#ff8200' },
-      { value: 4, label: 'Very high', color: '#dc0000' },
-    ],
-  },
-  {
-    filename: 'flow_direction_display.tif',
-    title: 'Flow Direction Display',
-    subtitle: 'RGB visualization of D8 terrain-flow directions.',
-    legend: [],
-  },
-  {
-    filename: 'relative_flood_vulnerability_display.tif',
-    title: 'Flood Vulnerability Display',
-    subtitle: 'RGB visualization of preliminary relative flood-screening classes.',
     legend: [
       { value: 0, label: 'Outside analysis', color: '#ffffff' },
       { value: 1, label: 'Low', color: '#00aa00' },
@@ -353,6 +341,16 @@ export default function App() {
   const [segmentationPreviewYear, setSegmentationPreviewYear] = useState<number | null>(null);
   const [waterChange, setWaterChange] =
     useState<MultiYearWaterChangeResult | null>(null);
+  const [analysisProgress, setAnalysisProgress] = useState<AnalysisPipelineProgress>({
+    state: 'idle',
+    currentStage: null,
+    completedStages: 0,
+    totalStages: 4,
+    message: 'Ready to run the complete water-impact analysis.',
+  });
+  const [analysisResults, setAnalysisResults] = useState<AnalysisPipelineStageResult[]>([]);
+  const [analysisMapItems, setAnalysisMapItems] = useState<IntermediateRasterItem[]>([]);
+  const analysisLayerFilesRef = useRef<Set<string>>(new Set());
   const [persistentWater, setPersistentWater] = useState<{
     parsed: ParsedGeoTiff;
     stats: PersistentWaterStats;
@@ -411,10 +409,27 @@ export default function App() {
       .sort((a, b) => a.year - b.year);
   }, [yearlyItems]);
 
-  const resetDownstreamOutputs = () => {
+  const resetDownstreamOutputs = (
+    clearPipelineProgress = true,
+    clearPipelineResults = true
+  ) => {
     setSegmentationMasks([]);
     setSegmentationPreviewYear(null);
     setWaterChange(null);
+    if (clearPipelineResults) {
+      setAnalysisResults([]);
+      setAnalysisMapItems([]);
+      analysisLayerFilesRef.current.clear();
+    }
+    if (clearPipelineProgress) {
+      setAnalysisProgress({
+        state: 'idle',
+        currentStage: null,
+        completedStages: 0,
+        totalStages: 4,
+        message: 'Ready to run the complete water-impact analysis.',
+      });
+    }
     setPersistentWater(null);
     setLulcAnalysis(null);
     setEncroachment(null);
@@ -747,28 +762,99 @@ export default function App() {
     }
   };
 
+  const showWaterChangeFromActiveRun = async () => {
+    setActiveStep(2);
+    setErrorMsg(null);
+    setProcessingDetail('Waiting for the current run to finish its water-change maps...');
+
+    while (true) {
+      const statusResponse = await fetch('/api/process/water-change/status');
+      if (!statusResponse.ok) {
+        throw new Error(`Could not check water-change progress (${statusResponse.status}).`);
+      }
+      const status = await statusResponse.json();
+      if (status.state === 'failed') {
+        throw new Error(status.message || 'The current water-impact analysis failed.');
+      }
+      const waterChangeReady =
+        status.currentStage !== 'water-flow-impact' &&
+        (status.completedStages >= 1 ||
+        status.completedComparisons >= status.totalComparisons ||
+        status.state === 'completed');
+
+      setProcessingDetail(
+        status.currentComparison
+          ? `Water Change is running as part of Water-Flow Impact. Completed ${status.completedComparisons}/${status.totalComparisons} comparisons; currently running ${status.currentComparison}.`
+          : status.message
+      );
+
+      if (waterChangeReady) {
+        const resultsResponse = await fetch('/api/water-change/results');
+        if (resultsResponse.ok) {
+          const resultsData = await resultsResponse.json();
+          const result = await parseWaterChangeResults(resultsData);
+          setWaterChange(result);
+          setMapFocusCounter((counter) => counter + 1);
+          return;
+        }
+
+        if (status.state !== 'running') {
+          const errorData = await resultsResponse.json().catch(() => null);
+          throw new Error(
+            errorData?.error ||
+              status.message ||
+              'Water-change outputs are not available from the current run.'
+          );
+        }
+      }
+
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 1000);
+      });
+    }
+  };
+
   // STEP 2 Execution: Multi-Year Water Change
   const handleRunStep2WaterChange = async (
     customFromYear: number = 2017,
     customToYear: number = 2024
   ) => {
+    const wasAlreadyProcessing = isProcessing;
+    try {
+      const statusResponse = await fetch('/api/process/water-change/status');
+      if (statusResponse.ok) {
+        const status = await statusResponse.json();
+        if (status.state === 'running') {
+          await showWaterChangeFromActiveRun();
+          return;
+        }
+      }
+    } catch (err) {
+      setActiveStep(2);
+      setErrorMsg(
+        err instanceof Error
+          ? err.message
+          : 'Could not read the current water-change analysis status.'
+      );
+      return;
+    }
+
     let progressTimer: number | undefined;
     try {
       setActiveStep(2);
       setIsProcessing(true);
       setErrorMsg(null);
       setProcessingSubStep(1);
-      setProcessingDetail('Starting all four polygon-based comparisons...');
+      setProcessingDetail('Generating water-change maps and statistics.');
       const refreshProgress = async () => {
         try {
           const statusRes = await fetch('/api/process/water-change/status');
           if (!statusRes.ok) return;
           const status = await statusRes.json();
-          const current = status.currentComparison
-            ? `; running ${status.currentComparison}`
-            : '';
           setProcessingDetail(
-            `${status.completedComparisons}/${status.totalComparisons} comparisons complete${current}`
+            status.currentComparison
+              ? `${status.message} Current water comparison: ${status.currentComparison}.`
+              : status.message
           );
         } catch {
           // The analysis request remains authoritative if status polling briefly fails.
@@ -783,6 +869,11 @@ export default function App() {
       });
       if (!apiRes.ok) {
         const errorData = await apiRes.json().catch(() => null);
+        if (apiRes.status === 409) {
+          await showWaterChangeFromActiveRun();
+          if (!wasAlreadyProcessing) setIsProcessing(false);
+          return;
+        }
         throw new Error(errorData?.error || `Water change analysis failed (${apiRes.status}).`);
       }
       setProcessingSubStep(3);
@@ -792,11 +883,11 @@ export default function App() {
       setWaterChange(res);
       setMapFocusCounter((c) => c + 1);
       setProcessingSubStep(5);
-      setProcessingDetail('All four comparisons completed.');
+      setProcessingDetail('Water-change comparisons completed.');
       setIsProcessing(false);
     } catch (err) {
       setIsProcessing(false);
-      resetDownstreamOutputs();
+      resetDownstreamOutputs(false, false);
       setErrorMsg(err instanceof Error ? err.message : String(err));
     } finally {
       if (progressTimer !== undefined) window.clearInterval(progressTimer);
@@ -1019,6 +1110,16 @@ export default function App() {
     setIsProcessing(true);
     setProcessingSubStep(0);
     setErrorMsg(null);
+    setAnalysisResults([]);
+    setAnalysisMapItems([]);
+    analysisLayerFilesRef.current.clear();
+    setAnalysisProgress({
+      state: 'running',
+      currentStage: null,
+      completedStages: 0,
+      totalStages: 4,
+      message: 'Preparing drainage and terrain-flow layers.',
+    });
     try {
       const apiRes = await fetch('/api/process/water-flow-impact', {
         method: 'POST',
@@ -1061,16 +1162,148 @@ export default function App() {
         })
       );
       const primary = items.find(
-        (item) => item.filename === 'relative_flood_vulnerability_display.tif'
+        (item) => item.filename === 'relative_flood_vulnerability.tif'
       );
       if (!primary) {
-        throw new Error('Flood vulnerability display raster was not returned.');
+        throw new Error('Relative flood vulnerability raster was not returned.');
       }
       setWaterFlowImpact({ items, primary });
       setActiveWaterFlowRaster(null);
       setMapFocusCounter((counter) => counter + 1);
+
+      setProcessingDetail('Water-flow layers ready. Starting the four-stage water-impact analysis.');
+      let pipelineTimer: number | undefined;
+      const loadPipelineLayers = async (
+        stageResults: AnalysisPipelineStageResult[]
+      ) => {
+        const newLayers = stageResults.flatMap((stage) =>
+          stage.layers.map((layer) => ({ ...layer, stageTitle: stage.title }))
+        ).filter((layer) => !analysisLayerFilesRef.current.has(layer.filename));
+        newLayers.forEach((layer) => analysisLayerFilesRef.current.add(layer.filename));
+
+        const settledLayers = await Promise.allSettled(newLayers.map(async (layer) => {
+            const response = await fetch(`/api/raster/${encodeURIComponent(layer.filename)}`);
+            if (!response.ok) {
+              throw new Error(`Could not load RGB GeoTIFF ${layer.filename}.`);
+            }
+            const parsed = await parseGeoTiffBuffer(
+              await response.arrayBuffer(),
+              layer.filename
+            );
+            return {
+              ...makeBackendRasterCard(
+                parsed,
+                layer.label,
+                `${layer.stageTitle} · RGB GeoTIFF display layer`,
+                0,
+                0,
+                layer.legend
+              ),
+              previewOnly: true,
+            };
+          }));
+        const loadedLayers = settledLayers.flatMap((result) =>
+          result.status === 'fulfilled' ? [result.value] : []
+        );
+        const failedIndexes = settledLayers.flatMap((result, index) =>
+          result.status === 'rejected' ? [index] : []
+        );
+        failedIndexes.forEach((index) => {
+          analysisLayerFilesRef.current.delete(newLayers[index].filename);
+        });
+        if (loadedLayers.length > 0) {
+          setAnalysisMapItems((previous) => [
+            ...previous,
+            ...loadedLayers.filter(
+              (loaded) => !previous.some((item) => item.filename === loaded.filename)
+            ),
+          ]);
+        }
+        if (failedIndexes.length > 0) {
+          const reason = settledLayers[failedIndexes[0]];
+          throw reason.status === 'rejected'
+            ? reason.reason
+            : new Error('An RGB GeoTIFF layer could not be loaded.');
+        }
+      };
+
+      const refreshPipelineProgress = async () => {
+        try {
+          const response = await fetch('/api/process/water-change/status');
+          if (!response.ok) return;
+          const status = await response.json();
+          setAnalysisProgress({
+            state: status.state,
+            currentStage: status.currentStage,
+            completedStages: status.completedStages,
+            totalStages: status.totalStages,
+            message: status.message,
+          });
+          if (Array.isArray(status.pipelineResults)) {
+            setAnalysisResults(status.pipelineResults);
+            await loadPipelineLayers(status.pipelineResults);
+          }
+          setProcessingDetail(status.message);
+        } catch (progressError) {
+          // The pipeline request remains authoritative if progress polling briefly fails.
+          setErrorMsg(progressError instanceof Error
+            ? progressError.message
+            : String(progressError));
+        }
+      };
+
+      try {
+        pipelineTimer = window.setInterval(() => void refreshPipelineProgress(), 1000);
+        const pipelineResponse = await fetch('/api/process/water-change', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fromYear: waterChange?.selectedComparison.fromYear || 2017,
+            toYear: waterChange?.selectedComparison.toYear || 2024,
+            runImpactPipeline: true,
+          }),
+        });
+        const pipelineData = await pipelineResponse.json();
+        if (!pipelineResponse.ok) {
+          if (Array.isArray(pipelineData.pipelineResults)) {
+            setAnalysisResults(pipelineData.pipelineResults);
+          }
+          throw new Error(pipelineData.error || 'Water-impact analysis failed.');
+        }
+        if (!Array.isArray(pipelineData.pipelineResults) || pipelineData.pipelineResults.length !== 4) {
+          throw new Error('The backend did not return results for all four analysis stages.');
+        }
+        setAnalysisResults(pipelineData.pipelineResults);
+        await loadPipelineLayers(pipelineData.pipelineResults);
+        setAnalysisProgress({
+          state: 'completed',
+          currentStage: null,
+          completedStages: 4,
+          totalStages: 4,
+          message: 'All four water-impact analysis stages completed successfully.',
+        });
+        setProcessingDetail('Water-flow, runoff, encroachment impact, and vulnerability results are ready.');
+      } catch (pipelineError) {
+        setAnalysisProgress((previous) => ({
+          ...previous,
+          state: 'failed',
+          message: pipelineError instanceof Error
+            ? pipelineError.message
+            : String(pipelineError),
+        }));
+        setErrorMsg(pipelineError instanceof Error
+          ? pipelineError.message
+          : String(pipelineError));
+      } finally {
+        if (pipelineTimer !== undefined) window.clearInterval(pipelineTimer);
+      }
     } catch (err) {
       setWaterFlowImpact(null);
+      setAnalysisProgress((previous) => ({
+        ...previous,
+        state: 'failed',
+        message: err instanceof Error ? err.message : String(err),
+      }));
       setErrorMsg(
         err instanceof Error
           ? err.message
@@ -1095,7 +1328,8 @@ export default function App() {
         persistentWater &&
         lulcAnalysis &&
         encroachment &&
-        waterFlowImpact
+        waterFlowImpact &&
+        analysisProgress.state === 'completed'
       );
     return false;
   };
@@ -1114,7 +1348,8 @@ export default function App() {
         persistentWater &&
         lulcAnalysis &&
         encroachment &&
-        waterFlowImpact
+        waterFlowImpact &&
+        analysisProgress.state === 'completed'
       );
     return false;
   };
@@ -1173,7 +1408,7 @@ export default function App() {
       return;
     }
     if (step === 6) {
-      if (waterFlowImpact) {
+      if (waterFlowImpact && analysisProgress.state === 'completed') {
         setActiveStep(6);
         setMapFocusCounter((c) => c + 1);
       } else {
@@ -2580,6 +2815,10 @@ export default function App() {
                       flood-vulnerability outputs. These screening layers are
                       indicators for review, not validated flood predictions.
                     </p>
+                    <p className="text-xs text-cyan-200 mt-2">
+                      Running Water-Flow Impact also runs water change, runoff comparison,
+                      encroachment-runoff analysis, and overall flood vulnerability in sequence.
+                    </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2.5">
                     <button
@@ -2590,7 +2829,7 @@ export default function App() {
                       <ArrowLeft className="w-3.5 h-3.5" />
                       Step 5
                     </button>
-                    {waterFlowImpact && (
+                    {waterFlowImpact && analysisProgress.state === 'completed' && (
                       <>
                         <button
                           type="button"
@@ -2618,11 +2857,12 @@ export default function App() {
                 stageTitle="Water-Flow Impact"
                 outputFilename={
                   waterFlowImpact?.primary.filename ||
-                  'relative_flood_vulnerability_display.tif'
+                  'relative_flood_vulnerability.tif'
                 }
                 isProcessing={isProcessing}
                 activeSubStep={processingSubStep}
                 error={errorMsg}
+                detail={processingDetail}
               />
 
               {waterFlowImpact ? (
@@ -2647,6 +2887,18 @@ export default function App() {
                       handleFocusMap();
                     }}
                   />
+
+                  <IntermediateResultsGrid
+                    sectionTitle="Runoff and Vulnerability RGB Map Layers"
+                    sectionSubtitle="RGB GeoTIFF outputs from runoff comparison, encroachment-runoff analysis, and overall flood vulnerability. Select a layer to display its map and legend above."
+                    items={analysisMapItems}
+                    activeMapItemId={activeWaterFlowRaster?.id || null}
+                    onSelectForMap={(item) => {
+                      setActiveWaterFlowRaster(item);
+                      handleFocusMap();
+                    }}
+                  />
+
                   <RasterMetadataPanel
                     metadata={
                       (activeWaterFlowRaster || waterFlowImpact.primary).parsed.metadata
@@ -2667,6 +2919,11 @@ export default function App() {
                   Retry Water-Flow Analysis
                 </button>
               )}
+
+              <AnalysisPipelinePanel
+                progress={analysisProgress}
+                results={analysisResults}
+              />
             </div>
           )}
 
@@ -2676,7 +2933,8 @@ export default function App() {
             persistentWater &&
             lulcAnalysis &&
             encroachment &&
-            waterFlowImpact && (
+            waterFlowImpact &&
+            analysisProgress.state === 'completed' && (
               <div className="flex flex-col gap-6">
                 <div className="border border-emerald-800/60 bg-slate-900/80 rounded-lg p-5">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

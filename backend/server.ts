@@ -55,8 +55,93 @@ let waterChangeProgress = {
   totalComparisons: SUPPORTED_WATER_CHANGE_COMPARISONS.length,
   currentComparison: null as string | null,
   message: 'Ready to run water change analysis.',
+  currentStage: null as string | null,
+  completedStages: 0,
+  totalStages: 4,
 };
 let waterSegmentationRunning = false;
+let waterFlowImpactRunning = false;
+
+const ANALYSIS_STAGES = [
+  { id: 'water-change', title: 'Water change', script: 'water_change.py' },
+  { id: 'runoff-comparison', title: 'Runoff comparison', script: 'runoff_comparision.py' },
+  { id: 'encroachment-runoff', title: 'Encroachment and runoff analysis', script: 'encroachment_runoff_analysis.py' },
+  { id: 'flood-vulnerability', title: 'Overall flood vulnerability', script: 'overall_flood_vulnerability.py' },
+] as const;
+
+type PipelineStageResult = {
+  id: string;
+  title: string;
+  summary: string;
+  note?: string;
+  metrics: Array<{ label: string; value: number | string; unit?: string }>;
+  layers: Array<{
+    label: string;
+    filename: string;
+    legend: Array<{ value: number; label: string; color: string }>;
+  }>;
+  outputs: Array<{ label: string; filename: string }>;
+};
+
+let waterChangePipelineResults: PipelineStageResult[] = [];
+
+function parseCsvLine(line: string): string[] {
+  const fields: string[] = [];
+  let field = '';
+  let quoted = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '"') {
+      if (quoted && line[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (character === ',' && !quoted) {
+      fields.push(field);
+      field = '';
+    } else {
+      field += character;
+    }
+  }
+
+  fields.push(field);
+  return fields;
+}
+
+function readCsvRow(csvPath: string): Record<string, string> {
+  if (!fs.existsSync(csvPath)) {
+    throw new Error(`Expected analysis summary was not created: ${csvPath}`);
+  }
+
+  const lines = fs.readFileSync(csvPath, 'utf-8')
+    .split(/\r?\n/)
+    .filter((line) => line.trim());
+  if (lines.length < 2) {
+    throw new Error(`Analysis summary is empty: ${csvPath}`);
+  }
+
+  const headers = parseCsvLine(lines[0]);
+  const values = parseCsvLine(lines[1]);
+  return Object.fromEntries(headers.map((header, index) => [header, values[index] ?? '']));
+}
+
+function numericField(row: Record<string, string>, field: string): number {
+  const value = Number(row[field]);
+  if (!Number.isFinite(value)) {
+    throw new Error(`Analysis summary has an invalid "${field}" value.`);
+  }
+  return value;
+}
+
+function requireAnalysisOutputs(paths: string[]): void {
+  const missing = paths.filter((outputPath) => !fs.existsSync(outputPath));
+  if (missing.length) {
+    throw new Error(`Expected analysis outputs were not created:\n${missing.join('\n')}`);
+  }
+}
 
 function parseCsvToMap(csvPath: string): Map<string, string> {
   const map = new Map<string, string>();
@@ -299,7 +384,7 @@ async function startServer() {
   });
 
   app.get('/api/process/water-change/status', (_req, res) => {
-    res.json(waterChangeProgress);
+    res.json({ ...waterChangeProgress, pipelineResults: waterChangePipelineResults });
   });
 
   app.get('/api/water-change/results', (_req, res) => {
@@ -515,13 +600,19 @@ async function startServer() {
   app.post(
     ['/api/process/water-change', '/process/water-change'],
     async (req, res) => {
-      if (waterChangeProgress.state === 'running') {
+      const isWaterFlowPipelineStart =
+        req.body?.runImpactPipeline === true &&
+        !waterFlowImpactRunning &&
+        waterChangeProgress.state === 'running' &&
+        waterChangeProgress.currentStage === 'water-flow-impact';
+      if (waterChangeProgress.state === 'running' && !isWaterFlowPipelineStart) {
         return res.status(409).json({ error: 'Water change analysis is already running.' });
       }
 
       try {
         const fromYear = Number(req.body?.fromYear) || 2017;
         const toYear = Number(req.body?.toYear) || 2024;
+        const runImpactPipeline = req.body?.runImpactPipeline === true;
 
         // Verify supported year pair
         const validPair = SUPPORTED_WATER_CHANGE_COMPARISONS.find(
@@ -538,8 +629,12 @@ async function startServer() {
           completedComparisons: 0,
           totalComparisons: SUPPORTED_WATER_CHANGE_COMPARISONS.length,
           currentComparison: null,
-          message: 'Starting polygon-based analysis for all four comparisons.',
+          message: 'Generating water-change maps and statistics.',
+          currentStage: ANALYSIS_STAGES[0].id,
+          completedStages: 0,
+          totalStages: runImpactPipeline ? ANALYSIS_STAGES.length : 1,
         };
+        waterChangePipelineResults = [];
 
         let pendingOutput = '';
         await runPythonScript('water_change.py', {
@@ -565,54 +660,275 @@ async function startServer() {
           }
         });
 
+        const waterChangeComparisons = SUPPORTED_WATER_CHANGE_COMPARISONS
+          .map(readWaterChangeComparison);
+        if (waterChangeComparisons.some((comparison) => comparison === null)) {
+          throw new Error('Water-change analysis did not produce all four raster and report pairs.');
+        }
+        const comparisons = waterChangeComparisons.map((comparison) => comparison!);
+        const selected = comparisons.find(
+          (item) => item.fromYear === fromYear && item.toYear === toYear
+        )!;
+        if (!runImpactPipeline) {
+          waterChangeProgress = {
+            ...waterChangeProgress,
+            state: 'completed',
+            currentComparison: null,
+            currentStage: null,
+            completedStages: 1,
+            message: 'Water-change comparisons completed.',
+          };
+          return res.json({
+            status: 'completed',
+            step: 'water-change',
+            studyArea: 'Velachery, Chennai',
+            comparison: { fromYear, toYear },
+            outputFilename: selected.outputFilename,
+            rawOutputFilename: selected.rawOutputFilename,
+            rasterUrl: selected.rasterUrl,
+            statistics: selected.statistics,
+            comparisons,
+          });
+        }
+
+        waterChangePipelineResults.push({
+          id: 'water-change',
+          title: 'Water change',
+          summary: 'Compares mapped water extent over four periods from the 2017 baseline.',
+          metrics: [
+            { label: 'Selected comparison', value: `${selected.fromYear} → ${selected.toYear}` },
+            { label: 'Water lost', value: selected.statistics.waterLossAreaHa, unit: 'ha' },
+            { label: 'Water gained', value: selected.statistics.waterGainAreaHa, unit: 'ha' },
+            { label: 'Persistent water', value: selected.statistics.persistentWaterAreaHa, unit: 'ha' },
+          ],
+          layers: [],
+          outputs: comparisons.map((comparison) => ({
+            label: `Water change ${comparison.fromYear} → ${comparison.toYear}`,
+            filename: comparison.outputFilename,
+          })),
+        });
+        waterChangeProgress = {
+          ...waterChangeProgress,
+          completedStages: 1,
+          currentComparison: null,
+          currentStage: ANALYSIS_STAGES[1].id,
+          message: 'Step 2 of 4: comparing modeled runoff for 2017 and 2024.',
+        };
+
+        await runPythonScript(ANALYSIS_STAGES[1].script);
+        requireAnalysisOutputs([
+          path.join(DATA_DIR, 'runoff_comparison', 'runoff_comparison_summary.csv'),
+          path.join(DATA_DIR, 'runoff_comparison', 'display_rgb', 'runoff_before_2017_mm_RGB.tif'),
+          path.join(DATA_DIR, 'runoff_comparison', 'display_rgb', 'runoff_after_2024_mm_RGB.tif'),
+          path.join(DATA_DIR, 'runoff_comparison', 'display_rgb', 'runoff_change_2024_minus_2017_mm_RGB.tif'),
+        ]);
+        const runoffSummary = readCsvRow(
+          path.join(DATA_DIR, 'runoff_comparison', 'runoff_comparison_summary.csv')
+        );
+        waterChangePipelineResults.push({
+          id: 'runoff-comparison',
+          title: 'Runoff comparison',
+          summary: 'Estimates how modeled runoff differs between the 2017 and 2024 land-cover maps.',
+          note: `Preliminary NRCS Curve Number scenario; assumed soil group ${runoffSummary['Soil Group']}.`,
+          metrics: [
+            { label: 'Assumed rainfall', value: numericField(runoffSummary, 'Assumed Rainfall (mm)'), unit: 'mm' },
+            { label: 'Mean runoff change', value: numericField(runoffSummary, 'Mean Runoff Change (mm)'), unit: 'mm' },
+            { label: 'Net runoff volume change', value: numericField(runoffSummary, 'Net Runoff Volume Change (m3)'), unit: 'm³' },
+            { label: 'Cells with increased runoff', value: numericField(runoffSummary, 'Pixels with Increased Runoff'), unit: 'cells' },
+          ],
+          layers: [
+            {
+              label: 'Runoff before (2017)',
+              filename: 'runoff_before_2017_mm_RGB.tif',
+              legend: [
+                { value: 0, label: 'Lower runoff', color: '#edf8fb' },
+                { value: 1, label: 'Moderate runoff', color: '#66c2a4' },
+                { value: 2, label: 'Higher runoff', color: '#225ea8' },
+              ],
+            },
+            {
+              label: 'Runoff after (2024)',
+              filename: 'runoff_after_2024_mm_RGB.tif',
+              legend: [
+                { value: 0, label: 'Lower runoff', color: '#edf8fb' },
+                { value: 1, label: 'Moderate runoff', color: '#66c2a4' },
+                { value: 2, label: 'Higher runoff', color: '#225ea8' },
+              ],
+            },
+            {
+              label: 'Runoff change (2024 − 2017)',
+              filename: 'runoff_change_2024_minus_2017_mm_RGB.tif',
+              legend: [
+                { value: -1, label: 'Runoff decrease', color: '#3b4cc0' },
+                { value: 0, label: 'Little or no change', color: '#f7f7f7' },
+                { value: 1, label: 'Runoff increase', color: '#b40426' },
+              ],
+            },
+          ],
+          outputs: [
+            { label: 'Runoff change raster', filename: 'runoff_change_2024_minus_2017_mm_RGB.tif' },
+          ],
+        });
+        waterChangeProgress = {
+          ...waterChangeProgress,
+          completedStages: 2,
+          currentStage: ANALYSIS_STAGES[2].id,
+          message: 'Step 3 of 4: identifying runoff increases within potential encroachment areas.',
+        };
+
+        await runPythonScript(ANALYSIS_STAGES[2].script);
+        requireAnalysisOutputs([
+          path.join(DATA_DIR, 'encroachment_runoff', 'encroachment_runoff_summary.csv'),
+          path.join(DATA_DIR, 'encroachment_runoff', 'rgb_01_full_study_area_runoff_change.tif'),
+          path.join(DATA_DIR, 'encroachment_runoff', 'rgb_02_potential_encroachment.tif'),
+          path.join(DATA_DIR, 'encroachment_runoff', 'rgb_03_runoff_change_encroachment_overlay.tif'),
+          path.join(DATA_DIR, 'encroachment_runoff', 'rgb_04_positive_runoff_increase_full_area.tif'),
+          path.join(DATA_DIR, 'encroachment_runoff', 'rgb_05_positive_increase_within_encroachment.tif'),
+        ]);
+        const encroachmentSummary = readCsvRow(
+          path.join(DATA_DIR, 'encroachment_runoff', 'encroachment_runoff_summary.csv')
+        );
+        waterChangePipelineResults.push({
+          id: 'encroachment-runoff',
+          title: 'Encroachment and runoff',
+          summary: 'Measures where potential encroachment overlaps with modeled runoff increases.',
+          note: encroachmentSummary.Interpretation,
+          metrics: [
+            { label: 'Potential encroachment area analysed', value: numericField(encroachmentSummary, 'Area Analysed (ha)'), unit: 'ha' },
+            { label: 'Cells with increased runoff', value: numericField(encroachmentSummary, 'Cells with Positive Runoff Increase'), unit: 'cells' },
+            { label: 'Positive-increase area', value: numericField(encroachmentSummary, 'Positive Increase Area (ha)'), unit: 'ha' },
+            { label: 'Positive runoff increase volume', value: numericField(encroachmentSummary, 'Positive Runoff Increase Volume (m3)'), unit: 'm³' },
+          ],
+          layers: [
+            {
+              label: 'Runoff change across study area',
+              filename: 'rgb_01_full_study_area_runoff_change.tif',
+              legend: [
+                { value: -1, label: 'Runoff decrease', color: '#3b4cc0' },
+                { value: 0, label: 'Little or no change', color: '#f7f7f7' },
+                { value: 1, label: 'Runoff increase', color: '#b40426' },
+              ],
+            },
+            {
+              label: 'Potential encroachment',
+              filename: 'rgb_02_potential_encroachment.tif',
+              legend: [
+                { value: 0, label: 'Other valid study area', color: '#dcdcdc' },
+                { value: 1, label: 'Potential encroachment', color: '#ff8c00' },
+              ],
+            },
+            {
+              label: 'Runoff change with encroachment overlay',
+              filename: 'rgb_03_runoff_change_encroachment_overlay.tif',
+              legend: [
+                { value: -1, label: 'Runoff decrease', color: '#3b4cc0' },
+                { value: 0, label: 'Runoff increase', color: '#b40426' },
+                { value: 1, label: 'Potential encroachment', color: '#ffe600' },
+              ],
+            },
+            {
+              label: 'Positive runoff increase across study area',
+              filename: 'rgb_04_positive_runoff_increase_full_area.tif',
+              legend: [
+                { value: 0, label: 'No increase', color: '#ebebeb' },
+                { value: 1, label: 'Positive runoff increase', color: '#e31a1c' },
+              ],
+            },
+            {
+              label: 'Positive increase within potential encroachment',
+              filename: 'rgb_05_positive_increase_within_encroachment.tif',
+              legend: [
+                { value: 0, label: 'Potential encroachment without increase', color: '#d7d7d7' },
+                { value: 1, label: 'Positive runoff increase', color: '#e31a1c' },
+              ],
+            },
+          ],
+          outputs: [
+            { label: 'Runoff change within potential encroachment', filename: 'runoff_change_within_potential_encroachment_mm.tif' },
+            { label: 'Positive runoff increase within potential encroachment', filename: 'positive_runoff_increase_within_encroachment_mm.tif' },
+          ],
+        });
+        waterChangeProgress = {
+          ...waterChangeProgress,
+          completedStages: 3,
+          currentStage: ANALYSIS_STAGES[3].id,
+          message: 'Step 4 of 4: combining the inputs into the overall flood-vulnerability index.',
+        };
+
+        const floodOutput = await runPythonScript(ANALYSIS_STAGES[3].script);
+        const overallScorePath = path.join(
+          DATA_DIR,
+          'overall_flood_vulnerability',
+          'overall_flood_vulnerability_score.tif'
+        );
+        const overallClassPath = path.join(
+          DATA_DIR,
+          'overall_flood_vulnerability',
+          'overall_flood_vulnerability_class.tif'
+        );
+        const overallClassRgbPath = path.join(
+          DATA_DIR,
+          'overall_flood_vulnerability',
+          'overall_flood_vulnerability_class_RGB.tif'
+        );
+        const overallPreviewPath = path.join(
+          DATA_DIR,
+          'overall_flood_vulnerability',
+          'overall_flood_vulnerability_class.png'
+        );
+        requireAnalysisOutputs([
+          overallScorePath,
+          overallClassPath,
+          overallClassRgbPath,
+          overallPreviewPath,
+        ]);
+
+        const overallClassCounts = ['Low', 'Moderate', 'High', 'Very High'].map((label) => {
+          const match = floodOutput.stdout.match(new RegExp(`${label}:\\s*(\\d+)\\s*cells`, 'i'));
+          if (!match) {
+            throw new Error(`Overall flood-vulnerability output is missing the "${label}" class count.`);
+          }
+          return { label, value: Number(match[1]) };
+        });
+        const meanOverallScore = floodOutput.stdout.match(/Mean overall score:\s*([0-9.eE+-]+)/);
+        if (!meanOverallScore) {
+          throw new Error('Overall flood-vulnerability output is missing the mean score.');
+        }
+        waterChangePipelineResults.push({
+          id: 'flood-vulnerability',
+          title: 'Overall flood vulnerability',
+          summary: 'Combines existing relative vulnerability, runoff change, and encroachment-related runoff.',
+          note: 'Preliminary relative screening index, not a flood forecast.',
+          metrics: [
+            { label: 'Mean index score', value: Number(meanOverallScore[1]) },
+            ...overallClassCounts,
+          ],
+          layers: [
+            {
+              label: 'Overall relative flood-vulnerability classes',
+              filename: path.basename(overallClassRgbPath),
+              legend: [
+                { value: 1, label: 'Low', color: '#22c55e' },
+                { value: 2, label: 'Moderate', color: '#eab308' },
+                { value: 3, label: 'High', color: '#f97316' },
+                { value: 4, label: 'Very High', color: '#dc2626' },
+              ],
+            },
+          ],
+          outputs: [
+            { label: 'Overall vulnerability class RGB map', filename: path.basename(overallClassRgbPath) },
+            { label: 'Continuous vulnerability score', filename: path.basename(overallScorePath) },
+          ],
+        });
+
         waterChangeProgress = {
           ...waterChangeProgress,
           state: 'completed',
           currentComparison: null,
-          message: 'All four comparisons completed.',
+          currentStage: null,
+          completedStages: ANALYSIS_STAGES.length,
+          message: 'All four analysis stages completed successfully.',
         };
-
-        const comparisons = SUPPORTED_WATER_CHANGE_COMPARISONS.map((item) => {
-          const csvPath = path.join(
-            DATA_DIR,
-            'water_change',
-            `water_change_report_${item.fromYear}_${item.toYear}.csv`
-          );
-          const reportData = parseCsvToMap(csvPath);
-          const waterLossHa = Number(reportData.get('Water Loss (ha)')) || 0;
-          const waterGainHa = Number(reportData.get('Water Gain (ha)')) || 0;
-          const persistentWaterHa = Number(reportData.get('Persistent Water (ha)')) || 0;
-          const historicalWaterHa = Number(reportData.get('Historical Water Area (ha)')) || 21.78;
-          const currentWaterHa = Number(reportData.get('Current Water Area (ha)')) || 19.5;
-          const netChangeHa = Number(reportData.get('Net Water Change (ha)')) || (currentWaterHa - historicalWaterHa);
-          const percentageChange = Number(reportData.get('Percentage Change (%)')) || (historicalWaterHa > 0 ? (netChangeHa / historicalWaterHa) * 100 : 0);
-          const outputFilename = `water_change_display_${item.fromYear}_${item.toYear}.tif`;
-
-          return {
-            fromYear: item.fromYear,
-            toYear: item.toYear,
-            outputFilename,
-            rawOutputFilename: `water_change_${item.fromYear}_${item.toYear}.tif`,
-            rasterUrl: `/api/raster/${outputFilename}`,
-            statistics: {
-              fromYear: item.fromYear,
-              toYear: item.toYear,
-              historicalWaterAreaHa: historicalWaterHa,
-              currentWaterAreaHa: currentWaterHa,
-              waterLossAreaHa: waterLossHa,
-              waterGainAreaHa: waterGainHa,
-              persistentWaterAreaHa: persistentWaterHa,
-              netChangeAreaHa: netChangeHa,
-              percentageChange,
-              waterLossPixels: Number(reportData.get('Water Loss Pixels')) || Math.round(waterLossHa * 100),
-              waterGainPixels: Number(reportData.get('Water Gain Pixels')) || Math.round(waterGainHa * 100),
-              persistentWaterPixels: Number(reportData.get('Persistent Water Pixels')) || Math.round(persistentWaterHa * 100),
-            },
-          };
-        });
-        const selected = comparisons.find(
-          (item) => item.fromYear === fromYear && item.toYear === toYear
-        )!;
 
         res.json({
           status: 'completed',
@@ -624,15 +940,21 @@ async function startServer() {
           rasterUrl: selected.rasterUrl,
           statistics: selected.statistics,
           comparisons,
+          pipelineResults: waterChangePipelineResults,
         });
       } catch (err: any) {
+        const failedStage = waterChangeProgress.currentStage;
         waterChangeProgress = {
           ...waterChangeProgress,
           state: 'failed',
           currentComparison: null,
-          message: 'Water change analysis failed.',
+          currentStage: failedStage,
+          message: `${ANALYSIS_STAGES.find((stage) => stage.id === failedStage)?.title || 'Analysis'} failed.`,
         };
-        res.status(500).json({ error: `Water change GIS execution failed: ${String(err?.message || err)}` });
+        res.status(500).json({
+          error: `${waterChangeProgress.message} ${String(err?.message || err)}`,
+          pipelineResults: waterChangePipelineResults,
+        });
       }
     }
   );
@@ -851,6 +1173,27 @@ async function startServer() {
   app.post(
     ['/api/process/water-flow-impact', '/process/water-flow-impact'],
     async (_req, res) => {
+      if (
+        waterFlowImpactRunning ||
+        (waterChangeProgress.state === 'running' &&
+          waterChangeProgress.currentStage !== 'water-flow-impact')
+      ) {
+        return res.status(409).json({ error: 'A water-impact analysis is already running.' });
+      }
+
+      waterFlowImpactRunning = true;
+      waterChangeProgress = {
+        state: 'running',
+        completedComparisons: 0,
+        totalComparisons: SUPPORTED_WATER_CHANGE_COMPARISONS.length,
+        currentComparison: null,
+        message: 'Preparing water-flow impact layers before the water-impact analysis.',
+        currentStage: 'water-flow-impact',
+        completedStages: 0,
+        totalStages: ANALYSIS_STAGES.length,
+      };
+      waterChangePipelineResults = [];
+
       try {
         if (!fs.existsSync(DRAINAGE_GEOJSON_PATH)) {
           await runPythonScript('drainage_map.py');
@@ -874,6 +1217,7 @@ async function startServer() {
           'slope_degrees.tif',
           'flow_direction.tif',
           'flow_accumulation.tif',
+          'flow_accumulation_log_display.tif',
           'terrain_flow_gcc_drain_overlap.tif',
           'relative_flood_vulnerability.tif',
           'flow_direction_display.tif',
@@ -896,9 +1240,16 @@ async function startServer() {
           })),
         });
       } catch (err: any) {
+        waterChangeProgress = {
+          ...waterChangeProgress,
+          state: 'failed',
+          message: `Water-flow impact GIS execution failed: ${String(err?.message || err)}`,
+        };
         res.status(500).json({
           error: `Water-flow impact GIS execution failed: ${String(err?.message || err)}`,
         });
+      } finally {
+        waterFlowImpactRunning = false;
       }
     }
   );
@@ -912,6 +1263,10 @@ async function startServer() {
       path.join(DATA_DIR, 'lulc_analysis', safeName),
       path.join(DATA_DIR, 'potential_encroachment', safeName),
       path.join(DATA_DIR, 'water_flow_impact', safeName),
+      path.join(DATA_DIR, 'runoff_comparison', safeName),
+      path.join(DATA_DIR, 'runoff_comparison', 'display_rgb', safeName),
+      path.join(DATA_DIR, 'encroachment_runoff', safeName),
+      path.join(DATA_DIR, 'overall_flood_vulnerability', safeName),
       path.join(DATA_DIR, 'temp_rasters', safeName),
       path.join(DATA_DIR, safeName),
       path.join(MASKS_DIR, safeName),
@@ -925,6 +1280,25 @@ async function startServer() {
       }
     }
     return res.status(404).json({ error: `Raster file ${safeName} not found on backend.` });
+  });
+
+  app.get('/api/analysis-assets/:group/:filename', (req, res) => {
+    const assetDirectories: Record<string, string> = {
+      'runoff-comparison': path.join(DATA_DIR, 'runoff_comparison', 'display_rgb'),
+      'encroachment-runoff': path.join(DATA_DIR, 'encroachment_runoff'),
+      'overall-flood-vulnerability': path.join(DATA_DIR, 'overall_flood_vulnerability'),
+    };
+    const directory = assetDirectories[req.params.group];
+    const safeName = path.basename(req.params.filename);
+    if (!directory || safeName !== req.params.filename || path.extname(safeName).toLowerCase() !== '.png') {
+      return res.status(404).json({ error: 'Analysis preview was not found.' });
+    }
+
+    const imagePath = path.join(directory, safeName);
+    if (!fs.existsSync(imagePath)) {
+      return res.status(404).json({ error: 'Analysis preview was not found.' });
+    }
+    return res.sendFile(imagePath);
   });
 
   app.get('/api/reports/lulc', (_req, res) => {

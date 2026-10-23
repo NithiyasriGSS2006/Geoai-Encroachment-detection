@@ -1,0 +1,2 @@
+Soil Group,Assumed Rainfall (mm),Mean Runoff Before 2017 (mm),Mean Runoff After 2024 (mm),Mean Runoff Change (mm),Net Runoff Volume Change (m3),Positive Runoff Increase Volume (m3),Pixels with Increased Runoff,Cell Area (m2),Valid Comparison Pixels,CN Method
+C,268.27060655356513,227.0167694091797,227.55467224121094,0.537903368473053,6845.0341796875,9870.7314453125,2556,100.0,127254,Preliminary NRCS AMC II scenario

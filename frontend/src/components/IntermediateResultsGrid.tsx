@@ -2,6 +2,10 @@ import React, { useMemo } from 'react';
 import { Eye, Download, RotateCcw, Layers } from 'lucide-react';
 import {
   IntermediateRasterItem,
+  isFlowDirectionRaster,
+  isSlopeRaster,
+  renderFlowDirectionToDataUrl,
+  renderSlopeToDataUrl,
   renderGeoTiffToDataUrl,
   downloadGeoTiffBuffer,
 } from '../utils/geotiffEngine';
@@ -19,9 +23,16 @@ const IntermediateCard: React.FC<{
   isActiveOnMap: boolean;
   onSelect: () => void;
 }> = ({ item, isActiveOnMap, onSelect }) => {
+  const isFlowDirection = isFlowDirectionRaster(item.parsed);
+  const isSlope = isSlopeRaster(item.parsed);
   const previewUrl = useMemo(
-    () => renderGeoTiffToDataUrl(item.parsed, item.legend, false),
-    [item.parsed, item.legend]
+    () =>
+      isFlowDirection
+        ? renderFlowDirectionToDataUrl(item.parsed)
+        : isSlope
+        ? renderSlopeToDataUrl(item.parsed)
+        : renderGeoTiffToDataUrl(item.parsed, item.legend, false),
+    [isFlowDirection, isSlope, item.parsed, item.legend]
   );
 
   return (
@@ -72,28 +83,30 @@ const IntermediateCard: React.FC<{
           )}
         </div>
 
-        {/* Calculated Area & Pixel Metrics */}
-        <div className="p-3.5 grid grid-cols-2 gap-2 text-xs">
-          <div>
-            <div className="text-[11px] text-slate-400">Calculated Area</div>
-            <div className="text-sm font-mono font-bold text-cyan-300 tabular-nums mt-0.5">
-              {item.areaKm2.toFixed(3)} km²
+        {!item.previewOnly && (
+          /* Calculated Area & Pixel Metrics */
+          <div className="p-3.5 grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <div className="text-[11px] text-slate-400">Calculated Area</div>
+              <div className="text-sm font-mono font-bold text-cyan-300 tabular-nums mt-0.5">
+                {item.areaKm2.toFixed(3)} km²
+              </div>
+              <div className="text-[11px] font-mono text-slate-400 tabular-nums">
+                {item.areaHa.toFixed(2)} ha · {Math.round(item.areaM2).toLocaleString()} m²
+              </div>
             </div>
-            <div className="text-[11px] font-mono text-slate-400 tabular-nums">
-              {item.areaHa.toFixed(2)} ha · {Math.round(item.areaM2).toLocaleString()} m²
-            </div>
-          </div>
 
-          <div className="text-right">
-            <div className="text-[11px] text-slate-400">Pixels &amp; Share</div>
-            <div className="text-sm font-mono font-bold text-slate-100 tabular-nums mt-0.5">
-              {item.pixels.toLocaleString()} px
-            </div>
-            <div className="text-[11px] font-mono text-emerald-400 tabular-nums">
-              {item.percentage.toFixed(2)}% of study area
+            <div className="text-right">
+              <div className="text-[11px] text-slate-400">Pixels &amp; Share</div>
+              <div className="text-sm font-mono font-bold text-slate-100 tabular-nums mt-0.5">
+                {item.pixels.toLocaleString()} px
+              </div>
+              <div className="text-[11px] font-mono text-emerald-400 tabular-nums">
+                {item.percentage.toFixed(2)}% of study area
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Action Buttons: View on Map + Download TIFF */}

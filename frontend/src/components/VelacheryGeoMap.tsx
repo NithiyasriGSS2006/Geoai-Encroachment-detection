@@ -11,6 +11,14 @@ import {
 } from 'react-leaflet';
 import L from 'leaflet';
 import {
+  ArrowDown,
+  ArrowDownLeft,
+  ArrowDownRight,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowUpLeft,
+  ArrowUpRight,
   Maximize2,
   Minimize2,
   Crosshair,
@@ -19,11 +27,18 @@ import {
   EyeOff,
   Sliders,
   MapPin,
+  type LucideIcon,
 } from 'lucide-react';
 import {
   ParsedGeoTiff,
   LegendItem,
+  getSlopeLegendItem,
+  isSlopeRaster,
+  SLOPE_LEGEND,
   VELACHERY_STUDY_AREA,
+  isFlowDirectionRaster,
+  renderFlowDirectionToDataUrl,
+  renderSlopeToDataUrl,
   renderGeoTiffToDataUrl,
 } from '../utils/geotiffEngine';
 
@@ -37,6 +52,28 @@ interface VelacheryGeoMapProps {
 }
 
 type BaseMapType = 'osm' | 'positron' | 'dark' | 'satellite';
+
+const FLOW_DIRECTION_ICONS: Record<number, LucideIcon> = {
+  1: ArrowRight,
+  2: ArrowUpRight,
+  4: ArrowUp,
+  8: ArrowUpLeft,
+  16: ArrowLeft,
+  32: ArrowDownLeft,
+  64: ArrowDown,
+  128: ArrowDownRight,
+};
+
+const FLOW_DIRECTION_LEGEND: LegendItem[] = [
+  { value: 1, label: 'East', color: '#ef4444' },
+  { value: 2, label: 'Northeast', color: '#f97316' },
+  { value: 4, label: 'North', color: '#eab308' },
+  { value: 8, label: 'Northwest', color: '#22c55e' },
+  { value: 16, label: 'West', color: '#06b6d4' },
+  { value: 32, label: 'Southwest', color: '#3b82f6' },
+  { value: 64, label: 'South', color: '#a855f7' },
+  { value: 128, label: 'Southeast', color: '#ec4899' },
+];
 
 const BASE_MAPS: Record<
   BaseMapType,
@@ -169,26 +206,41 @@ function RasterPixelInspector({
         const row = Math.floor(((north - lat) / (north - south)) * height);
         if (col >= 0 && col < width && row >= 0 && row < height) {
           const val = raster.data[row * width + col];
-          if (val === -9999) {
+          if (
+            !Number.isFinite(val) ||
+            (raster.metadata.noDataValue !== null &&
+              val === raster.metadata.noDataValue)
+          ) {
             onHoverPixel({
               lat,
               lng,
               row,
               col,
               value: null,
-              label: 'NoData (-9999)',
+              label:
+                raster.metadata.noDataValue === null
+                  ? 'NoData'
+                  : `NoData (${raster.metadata.noDataValue})`,
               color: '#64748b',
             });
             return;
           }
-          const matched = legend.find((l) => l.value === val);
+          const matched = raster.rgbData
+            ? undefined
+            : isSlopeRaster(raster)
+            ? getSlopeLegendItem(val)
+            : legend.find((l) => l.value === val);
           onHoverPixel({
             lat,
             lng,
             row,
             col,
-            value: val,
-            label: matched ? matched.label : `Raster Value ${val}`,
+            value: raster.rgbData ? null : val,
+            label: raster.rgbData
+              ? 'RGB display layer'
+              : matched
+                ? matched.label
+                : `Raster Value ${val}`,
             color: matched ? matched.color : '#38bdf8',
           });
           return;
@@ -263,8 +315,22 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
   // Render the actual GeoTIFF pixel matrix into a georeferenced RGBA overlay
   const rasterDataUrl = useMemo(() => {
     if (!raster) return null;
+    if (isFlowDirectionRaster(raster)) {
+      return renderFlowDirectionToDataUrl(raster);
+    }
+    if (isSlopeRaster(raster)) {
+      return renderSlopeToDataUrl(raster);
+    }
     return renderGeoTiffToDataUrl(raster, legend, transparentZero);
   }, [raster, legend, transparentZero]);
+
+  const visibleLegend = raster
+    ? isFlowDirectionRaster(raster)
+      ? FLOW_DIRECTION_LEGEND
+      : isSlopeRaster(raster)
+      ? SLOPE_LEGEND
+      : legend
+    : legend;
 
   const handleFitStudyArea = () => {
     setFitCount((c) => c + 1);
@@ -572,7 +638,7 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
         )}
 
         {/* Bottom-Right Map Legend Overlay */}
-        {!compact && legend.length > 0 && (
+        {!compact && visibleLegend.length > 0 && (
           <div className="absolute bottom-3 right-3 z-[450] bg-slate-950/90 backdrop-blur-md border border-slate-800 rounded p-3 shadow-lg max-w-xs">
             <div className="flex items-center justify-between gap-4 mb-2 border-b border-slate-800 pb-1.5">
               <span className="text-[11px] font-semibold text-slate-200">
@@ -587,23 +653,38 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
               </button>
             </div>
             <div className="space-y-1.5">
-              {legend.map((item) => (
-                <div
-                  key={item.value}
-                  className="flex items-center gap-2 text-[11px]"
-                >
-                  <span
-                    className="w-3 h-3 rounded-xs shrink-0 border border-white/15"
-                    style={{ backgroundColor: item.color }}
-                  />
-                  <span className="text-slate-200 truncate flex-1">
-                    {item.label}
-                  </span>
-                  <span className="font-mono text-[10px] text-slate-400 tabular-nums">
-                    {item.value}
-                  </span>
-                </div>
-              ))}
+              {visibleLegend.map((item) => {
+                const DirectionIcon = FLOW_DIRECTION_ICONS[item.value];
+                const isFlowDirection = raster && isFlowDirectionRaster(raster);
+                return (
+                  <div
+                    key={item.value}
+                    className="flex items-center gap-2 text-[11px]"
+                  >
+                    {isFlowDirection && DirectionIcon ? (
+                      <DirectionIcon
+                        className="w-4 h-4 shrink-0"
+                        aria-hidden="true"
+                        style={{ color: item.color, stroke: item.color }}
+                        strokeWidth={3}
+                      />
+                    ) : (
+                      <span
+                        className="w-3 h-3 rounded-xs shrink-0 border border-white/15"
+                        style={{ backgroundColor: item.color }}
+                      />
+                    )}
+                    <span className="text-slate-200 truncate flex-1">
+                      {item.label}
+                    </span>
+                    {!raster?.rgbData && (
+                      <span className="font-mono text-[10px] text-slate-400 tabular-nums">
+                        {item.description || item.value}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

@@ -3,8 +3,12 @@ import os
 from pathlib import Path
 
 import geopandas as gpd
+import matplotlib
 import numpy as np
 import rasterio
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from rasterio.features import rasterize
 from rasterio.warp import reproject, Resampling
@@ -353,6 +357,123 @@ for path in [
 print("Terrain flow products created.")
 
 
+# # ==========================================================
+# # 9. IDENTIFY HIGH-FLOW-ACCUMULATION AREAS
+# # ==========================================================
+
+# with rasterio.open(flow_accumulation_path) as src:
+#     flow_acc = src.read(1).astype(np.float32)
+#     flow_nodata = src.nodata
+
+# with rasterio.open(slope_path) as src:
+#     slope = src.read(1).astype(np.float32)
+#     slope_nodata = src.nodata
+
+# flow_valid = valid_analysis & np.isfinite(flow_acc)
+# if flow_nodata is not None:
+#     flow_valid &= flow_acc != flow_nodata
+
+# flow_valid &= flow_acc >= 0
+
+# if not np.any(flow_valid):
+#     raise ValueError("No valid flow accumulation cells found.")
+
+# # Use the 90th percentile as an initial screening threshold
+# flow_threshold = np.percentile(flow_acc[flow_valid], 90)
+
+# high_flow = (flow_acc >= flow_threshold) & flow_valid
+
+# # Terrain flow paths that overlap mapped drainage raster
+# flow_drain_overlap = high_flow & (drain_raster == 1)
+
+# overlap_path = OUTPUT_DIR / "terrain_flow_gcc_drain_overlap.tif"
+
+# overlap_output = np.zeros((height, width), dtype=np.uint8)
+# overlap_output[flow_drain_overlap] = 255
+# overlap_output[~valid_analysis] = 0
+
+# with rasterio.open(overlap_path, "w", **uint8_profile) as dst:
+#     dst.write(overlap_output, 1)
+
+# print("Terrain-flow and GCC-drain overlap saved.")
+
+
+# # ==========================================================
+# # 10. CREATE A PRELIMINARY RELATIVE FLOOD SCREENING MAP
+# # ==========================================================
+
+# # Normalize log flow accumulation
+# flow_values = np.log1p(np.maximum(flow_acc, 0))
+# valid_flow_values = flow_values[flow_valid]
+
+# flow_min = valid_flow_values.min()
+# flow_max = valid_flow_values.max()
+
+# if flow_max > flow_min:
+#     flow_norm = (flow_values - flow_min) / (flow_max - flow_min)
+# else:
+#     flow_norm = np.zeros_like(flow_values)
+
+# # Normalize slope: flatter terrain receives a higher
+# # screening score, but flatness alone does not prove flooding.
+# slope_valid = valid_analysis & np.isfinite(slope)
+
+# if slope_nodata is not None:
+#     slope_valid &= slope != slope_nodata
+
+# if not np.any(slope_valid):
+#     raise ValueError("No valid slope cells found.")
+
+# slope_min = np.min(slope[slope_valid])
+# slope_max = np.max(slope[slope_valid])
+
+# if slope_max > slope_min:
+#     slope_norm = (slope - slope_min) / (slope_max - slope_min)
+# else:
+#     slope_norm = np.zeros_like(slope)
+
+# # Combine terrain indicators and proximity to mapped drainage.
+# # These weights are provisional and must be validated.
+# proximity_score = np.clip(
+#     1.0 - distance_to_drain / 300.0,
+#     0.0,
+#     1.0
+# )
+
+# score = (
+#     0.40 * flow_norm
+#     + 0.30 * (1.0 - slope_norm)
+#     + 0.30 * proximity_score
+# )
+
+# score_valid = (
+#     valid_analysis
+#     & flow_valid
+#     & slope_valid
+#     & np.isfinite(score)
+# )
+
+# # 0 = NoData/outside valid analysis
+# # 1 = Low, 2 = Moderate, 3 = High, 4 = Very high
+# vulnerability = np.zeros(
+#     (height, width), dtype=np.uint8
+# )
+
+# vulnerability[score_valid & (score < 0.25)] = 1
+# vulnerability[
+#     score_valid & (score >= 0.25) & (score < 0.50)
+# ] = 2
+# vulnerability[
+#     score_valid & (score >= 0.50) & (score < 0.75)
+# ] = 3
+# vulnerability[score_valid & (score >= 0.75)] = 4
+
+# vulnerability_path = OUTPUT_DIR / "relative_flood_vulnerability.tif"
+
+# with rasterio.open(vulnerability_path, "w", **uint8_profile) as dst:
+#     dst.write(vulnerability, 1)
+
+
 # ==========================================================
 # 9. IDENTIFY HIGH-FLOW-ACCUMULATION AREAS
 # ==========================================================
@@ -365,28 +486,47 @@ with rasterio.open(slope_path) as src:
     slope = src.read(1).astype(np.float32)
     slope_nodata = src.nodata
 
-flow_valid = valid_analysis & np.isfinite(flow_acc)
+# Terrain validity is independent of potential encroachment.
+flow_valid = np.isfinite(flow_acc)
+
 if flow_nodata is not None:
     flow_valid &= flow_acc != flow_nodata
 
 flow_valid &= flow_acc >= 0
 
-if not np.any(flow_valid):
-    raise ValueError("No valid flow accumulation cells found.")
+slope_valid = np.isfinite(slope)
 
-# Use the 90th percentile as an initial screening threshold
-flow_threshold = np.percentile(flow_acc[flow_valid], 90)
+if slope_nodata is not None:
+    slope_valid &= slope != slope_nodata
+
+# Distance to drains must also be valid.
+distance_valid = np.isfinite(distance_to_drain)
+
+# Combine terrain and drainage validity.
+terrain_valid = flow_valid & slope_valid & distance_valid
+
+if not np.any(terrain_valid):
+    raise ValueError("No valid terrain cells found.")
+
+# Use the 90th percentile across valid terrain cells.
+flow_threshold = np.percentile(
+    flow_acc[flow_valid], 90
+)
 
 high_flow = (flow_acc >= flow_threshold) & flow_valid
 
-# Terrain flow paths that overlap mapped drainage raster
-flow_drain_overlap = high_flow & (drain_raster == 1)
+# Keep this overlap output restricted to the study's
+# potential-encroachment analysis area.
+flow_drain_overlap = (
+    high_flow
+    & (drain_raster == 1)
+    & valid_analysis
+)
 
 overlap_path = OUTPUT_DIR / "terrain_flow_gcc_drain_overlap.tif"
 
 overlap_output = np.zeros((height, width), dtype=np.uint8)
 overlap_output[flow_drain_overlap] = 255
-overlap_output[~valid_analysis] = 0
 
 with rasterio.open(overlap_path, "w", **uint8_profile) as dst:
     dst.write(overlap_output, 1)
@@ -398,77 +538,93 @@ print("Terrain-flow and GCC-drain overlap saved.")
 # 10. CREATE A PRELIMINARY RELATIVE FLOOD SCREENING MAP
 # ==========================================================
 
-# Normalize log flow accumulation
-flow_values = np.log1p(np.maximum(flow_acc, 0))
-valid_flow_values = flow_values[flow_valid]
+# Normalize log flow accumulation using valid terrain cells.
+flow_values = np.full_like(flow_acc, np.nan, dtype=np.float32)
+flow_values[flow_valid] = np.log1p(
+    np.maximum(flow_acc[flow_valid], 0)
+)
 
+valid_flow_values = flow_values[flow_valid]
 flow_min = valid_flow_values.min()
 flow_max = valid_flow_values.max()
 
+flow_norm = np.zeros_like(flow_acc, dtype=np.float32)
+
 if flow_max > flow_min:
-    flow_norm = (flow_values - flow_min) / (flow_max - flow_min)
-else:
-    flow_norm = np.zeros_like(flow_values)
+    flow_norm[flow_valid] = (
+        (flow_values[flow_valid] - flow_min)
+        / (flow_max - flow_min)
+    )
 
-# Normalize slope: flatter terrain receives a higher
-# screening score, but flatness alone does not prove flooding.
-slope_valid = valid_analysis & np.isfinite(slope)
-
-if slope_nodata is not None:
-    slope_valid &= slope != slope_nodata
-
-if not np.any(slope_valid):
-    raise ValueError("No valid slope cells found.")
+# Normalize slope using valid slope cells only.
+slope_norm = np.zeros_like(slope, dtype=np.float32)
 
 slope_min = np.min(slope[slope_valid])
 slope_max = np.max(slope[slope_valid])
 
 if slope_max > slope_min:
-    slope_norm = (slope - slope_min) / (slope_max - slope_min)
-else:
-    slope_norm = np.zeros_like(slope)
+    slope_norm[slope_valid] = (
+        (slope[slope_valid] - slope_min)
+        / (slope_max - slope_min)
+    )
 
-# Combine terrain indicators and proximity to mapped drainage.
-# These weights are provisional and must be validated.
-proximity_score = np.clip(
-    1.0 - distance_to_drain / 300.0,
+# Proximity to mapped stormwater drains.
+proximity_score = np.zeros_like(
+    distance_to_drain, dtype=np.float32
+)
+
+proximity_score[distance_valid] = np.clip(
+    1.0 - distance_to_drain[distance_valid] / 300.0,
     0.0,
     1.0
 )
 
+# Calculate the existing weighted screening score.
 score = (
     0.40 * flow_norm
     + 0.30 * (1.0 - slope_norm)
     + 0.30 * proximity_score
 )
 
+# IMPORTANT:
+# Do not include valid_analysis here.
+# This creates a terrain-based map across valid terrain,
+# rather than restricting it to encroachment coverage.
 score_valid = (
-    valid_analysis
-    & flow_valid
-    & slope_valid
+    terrain_valid
     & np.isfinite(score)
 )
 
-# 0 = NoData/outside valid analysis
+# 0 = NoData/outside valid terrain
 # 1 = Low, 2 = Moderate, 3 = High, 4 = Very high
 vulnerability = np.zeros(
     (height, width), dtype=np.uint8
 )
 
 vulnerability[score_valid & (score < 0.25)] = 1
+
 vulnerability[
-    score_valid & (score >= 0.25) & (score < 0.50)
+    score_valid
+    & (score >= 0.25)
+    & (score < 0.50)
 ] = 2
+
 vulnerability[
-    score_valid & (score >= 0.50) & (score < 0.75)
+    score_valid
+    & (score >= 0.50)
+    & (score < 0.75)
 ] = 3
+
 vulnerability[score_valid & (score >= 0.75)] = 4
 
-vulnerability_path = OUTPUT_DIR / "relative_flood_vulnerability.tif"
+vulnerability_path = (
+    OUTPUT_DIR / "relative_flood_vulnerability.tif"
+)
 
 with rasterio.open(vulnerability_path, "w", **uint8_profile) as dst:
     dst.write(vulnerability, 1)
 
+print("Full terrain-based relative flood screening map saved.")
 
 # ==========================================================
 # 11. SUMMARY
@@ -546,13 +702,13 @@ def save_rgb_geotiff(input_path, output_path, color_map):
 
 flow_direction_colors = {
     1:   (255, 0, 0),       # East
-    2:   (255, 165, 0),     # Southeast
-    4:   (255, 255, 0),     # South
-    8:   (0, 200, 0),       # Southwest
+    2:   (255, 165, 0),     # Northeast
+    4:   (255, 255, 0),     # North
+    8:   (0, 200, 0),       # Northwest
     16:  (0, 200, 255),     # West
-    32:  (0, 0, 255),       # Northwest
-    64:  (160, 32, 240),    # North
-    128: (255, 0, 255)      # Northeast
+    32:  (0, 0, 255),      # Southwest
+    64:  (160, 32, 240),   # South
+    128: (255, 0, 255)     # Southeast
 }
 
 save_rgb_geotiff(
@@ -582,3 +738,57 @@ save_rgb_geotiff(
 )
 
 print("\nDisplay-ready GeoTIFF layers created successfully.")
+
+
+# ==========================================================
+# 13. CREATE LOG-SCALED FLOW ACCUMULATION DISPLAY
+# Original flow_accumulation.tif remains unchanged.
+# ==========================================================
+
+flow_accumulation_path = OUTPUT_DIR / "flow_accumulation.tif"
+log_display_path = OUTPUT_DIR / "flow_accumulation_log_display.tif"
+
+with rasterio.open(flow_accumulation_path) as src:
+    flow_acc = src.read(1).astype(np.float32)
+    flow_profile = src.profile.copy()
+    flow_nodata = src.nodata
+
+valid = np.isfinite(flow_acc) & (flow_acc >= 0)
+if flow_nodata is not None:
+    valid &= flow_acc != flow_nodata
+
+if not np.any(valid):
+    raise ValueError("No valid flow accumulation values found.")
+
+log_flow = np.full(flow_acc.shape, -9999.0, dtype=np.float32)
+log_flow[valid] = np.log1p(flow_acc[valid])
+
+log_profile = flow_profile.copy()
+log_profile.update(
+    driver="GTiff",
+    dtype="float32",
+    count=1,
+    nodata=-9999.0,
+    compress="lzw",
+)
+
+with rasterio.open(log_display_path, "w", **log_profile) as dst:
+    dst.write(log_flow, 1)
+    dst.set_band_description(1, "log(1 + flow accumulation in cells)")
+
+print("Log-scaled flow accumulation saved:", log_display_path)
+
+preview_path = OUTPUT_DIR / "flow_accumulation_log_preview.png"
+with rasterio.open(log_display_path) as src:
+    preview_data = src.read(1, masked=True)
+
+fig, ax = plt.subplots(figsize=(12, 7))
+image = ax.imshow(preview_data, cmap="terrain")
+fig.colorbar(image, ax=ax, label="log(1 + flow accumulation in cells)")
+ax.set_title("Velachery - Log-Scaled Flow Accumulation")
+ax.axis("off")
+fig.tight_layout()
+fig.savefig(preview_path, dpi=200, bbox_inches="tight")
+plt.close(fig)
+
+print("Flow accumulation preview saved:", preview_path)

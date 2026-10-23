@@ -108,6 +108,26 @@ export interface LegendItem {
   description?: string;
 }
 
+export const SLOPE_LEGEND: LegendItem[] = [
+  { value: 0, label: 'Nearly flat', color: '#22c55e', description: '0–2°' },
+  { value: 2, label: 'Gentle', color: '#a3e635', description: '2–5°' },
+  { value: 5, label: 'Moderate', color: '#facc15', description: '5–15°' },
+  { value: 15, label: 'Steep', color: '#f97316', description: '15–30°' },
+  { value: 30, label: 'Very steep', color: '#ef4444', description: '>30°' },
+];
+
+export function isSlopeRaster(parsed: ParsedGeoTiff): boolean {
+  return parsed.metadata.filename === 'slope_degrees.tif';
+}
+
+export function getSlopeLegendItem(value: number): LegendItem | undefined {
+  if (!Number.isFinite(value) || value < 0) return undefined;
+  for (let index = SLOPE_LEGEND.length - 1; index >= 0; index -= 1) {
+    if (value >= SLOPE_LEGEND[index].value) return SLOPE_LEGEND[index];
+  }
+  return undefined;
+}
+
 export interface WaterChangeStats {
   fromYear: number;
   toYear: number;
@@ -2046,6 +2066,131 @@ export function renderGeoTiffToDataUrl(
   return canvas.toDataURL('image/png');
 }
 
+export function isFlowDirectionRaster(parsed: ParsedGeoTiff): boolean {
+  return parsed.metadata.filename === 'flow_direction.tif';
+}
+
+export function renderSlopeToDataUrl(parsed: ParsedGeoTiff): string {
+  const { width, height, noDataValue } = parsed.metadata;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+
+  const imgData = ctx.createImageData(width, height);
+  const rgba = imgData.data;
+  const data = parsed.data;
+  const colors = SLOPE_LEGEND.map((item) => {
+    const hex = item.color.slice(1);
+    return [
+      parseInt(hex.slice(0, 2), 16),
+      parseInt(hex.slice(2, 4), 16),
+      parseInt(hex.slice(4, 6), 16),
+    ];
+  });
+
+  for (let index = 0; index < width * height; index += 1) {
+    const value = data[index];
+    if (
+      !Number.isFinite(value) ||
+      (noDataValue !== null && value === noDataValue)
+    ) {
+      continue;
+    }
+
+    const legendItem = getSlopeLegendItem(value);
+    if (!legendItem) continue;
+    const colorIndex = SLOPE_LEGEND.indexOf(legendItem);
+    const offset = index * 4;
+    const [red, green, blue] = colors[colorIndex];
+    rgba[offset] = red;
+    rgba[offset + 1] = green;
+    rgba[offset + 2] = blue;
+    rgba[offset + 3] = 230;
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  return canvas.toDataURL('image/png');
+}
+
+export function renderFlowDirectionToDataUrl(parsed: ParsedGeoTiff): string {
+  const { width, height } = parsed.metadata;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+
+  const directions: Record<number, [number, number]> = {
+    1: [1, 0],
+    2: [1, -1],
+    4: [0, -1],
+    8: [-1, -1],
+    16: [-1, 0],
+    32: [-1, 1],
+    64: [0, 1],
+    128: [1, 1],
+  };
+  const directionColors: Record<number, string> = {
+    1: '#ef4444',
+    2: '#f97316',
+    4: '#eab308',
+    8: '#22c55e',
+    16: '#06b6d4',
+    32: '#3b82f6',
+    64: '#a855f7',
+    128: '#ec4899',
+  };
+  const spacing = Math.max(6, Math.ceil(Math.max(width, height) / 24));
+  const arrowLength = spacing * 0.82;
+  const headLength = spacing * 0.32;
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.shadowColor = 'rgba(15, 23, 42, 0.9)';
+  ctx.shadowBlur = Math.max(1, spacing * 0.1);
+
+  for (let row = Math.floor(spacing / 2); row < height; row += spacing) {
+    for (let col = Math.floor(spacing / 2); col < width; col += spacing) {
+      const code = parsed.data[row * width + col];
+      const direction = directions[code];
+      if (!direction) continue;
+
+      const [dx, dy] = direction;
+      const centerX = col + 0.5;
+      const centerY = row + 0.5;
+      const startX = centerX - dx * arrowLength * 0.45;
+      const startY = centerY - dy * arrowLength * 0.45;
+      const endX = centerX + dx * arrowLength * 0.55;
+      const endY = centerY + dy * arrowLength * 0.55;
+      const headAngle = Math.atan2(dy, dx);
+
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.lineTo(
+        endX - Math.cos(headAngle - Math.PI / 6) * headLength,
+        endY - Math.sin(headAngle - Math.PI / 6) * headLength
+      );
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(
+        endX - Math.cos(headAngle + Math.PI / 6) * headLength,
+        endY - Math.sin(headAngle + Math.PI / 6) * headLength
+      );
+
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = Math.max(3, spacing * 0.25);
+      ctx.stroke();
+      ctx.strokeStyle = directionColors[code];
+      ctx.lineWidth = Math.max(1.5, spacing * 0.12);
+      ctx.stroke();
+    }
+  }
+
+  return canvas.toDataURL('image/png');
+}
+
 /**
  * Triggers a browser download of an ArrayBuffer as a binary `.tif` GeoTIFF file.
  */
@@ -2073,6 +2218,7 @@ export interface IntermediateRasterItem {
   percentage: number;
   parsed: ParsedGeoTiff;
   legend: LegendItem[];
+  previewOnly?: boolean;
 }
 
 /**

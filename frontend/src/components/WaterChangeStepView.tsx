@@ -207,6 +207,7 @@ export const WaterChangeStepView: React.FC<WaterChangeStepViewProps> = ({
               </label>
               <select
                 value={`${fromYear}_${toYear}`}
+                disabled={isProcessing}
                 onChange={(e) => {
                   const [f, t] = e.target.value.split('_').map(Number);
                   setFromYear(f);
@@ -224,8 +225,9 @@ export const WaterChangeStepView: React.FC<WaterChangeStepViewProps> = ({
 
             <button
               type="button"
+              disabled={isProcessing}
               onClick={() => onRunCustomPair(fromYear, toYear)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors whitespace-nowrap cursor-pointer ml-auto"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors whitespace-nowrap cursor-pointer ml-auto disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Play className="w-3 h-3 fill-current" />
               Run Water Change
