@@ -8,6 +8,7 @@ import {
   renderSlopeToDataUrl,
   renderGeoTiffToDataUrl,
   downloadGeoTiffBuffer,
+  isHistoricalFloodPointsRaster,
 } from '../utils/geotiffEngine';
 
 interface IntermediateResultsGridProps {
@@ -82,6 +83,23 @@ const IntermediateCard: React.FC<{
             </div>
           )}
         </div>
+
+        {isHistoricalFloodPointsRaster(item.parsed) && item.legend.length > 0 && (
+          <div className="flex flex-wrap gap-x-4 gap-y-2 px-3.5 py-2.5 border-b border-slate-800/80">
+            {item.legend.map((entry) => (
+              <div
+                key={entry.value}
+                className="inline-flex items-center gap-1.5 text-[11px] text-slate-300"
+              >
+                <span
+                  className="w-3 h-3 rounded-full border border-slate-950"
+                  style={{ backgroundColor: entry.color }}
+                />
+                {entry.label}
+              </div>
+            ))}
+          </div>
+        )}
 
         {!item.previewOnly && (
           /* Calculated Area & Pixel Metrics */

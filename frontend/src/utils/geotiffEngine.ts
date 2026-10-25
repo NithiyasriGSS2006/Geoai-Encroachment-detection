@@ -15,20 +15,37 @@ proj4.defs(
   '+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs +type=crs'
 );
 
+const VELACHERY_AOI_WGS84 = {
+  west: 80.1950,
+  south: 12.9750,
+  east: 80.2220,
+  north: 13.0050,
+};
+const [VELACHERY_UTM_WEST, VELACHERY_UTM_SOUTH] = proj4(
+  'EPSG:4326',
+  'EPSG:32644',
+  [VELACHERY_AOI_WGS84.west, VELACHERY_AOI_WGS84.south]
+);
+const [VELACHERY_UTM_EAST, VELACHERY_UTM_NORTH] = proj4(
+  'EPSG:4326',
+  'EPSG:32644',
+  [VELACHERY_AOI_WGS84.east, VELACHERY_AOI_WGS84.north]
+);
+
 // Authoritative Study Area: Velachery, Chennai, Tamil Nadu, India
 export const VELACHERY_STUDY_AREA = {
   name: 'Velachery, Chennai, Tamil Nadu, India',
   shortName: 'Velachery, Chennai',
-  centerLat: 12.9793,
-  centerLng: 80.2164,
+  centerLat: (VELACHERY_AOI_WGS84.south + VELACHERY_AOI_WGS84.north) / 2,
+  centerLng: (VELACHERY_AOI_WGS84.west + VELACHERY_AOI_WGS84.east) / 2,
   crs: 'EPSG:32644',
   crsName: 'EPSG:32644 (WGS 84 / UTM zone 44N — Chennai)',
-  utmOriginX: 413400.0, // West Easting (m)
-  utmOriginY: 1436400.0, // North Northing (m)
-  pixelScaleX: 10.0, // 10m Sentinel-2 spatial resolution
-  pixelScaleY: 10.0, // 10m Sentinel-2 spatial resolution
-  defaultWidth: 320, // 3,200 m West-East
-  defaultHeight: 260, // 2,600 m North-South
+  utmOriginX: VELACHERY_UTM_WEST,
+  utmOriginY: VELACHERY_UTM_NORTH,
+  pixelScaleX: (VELACHERY_UTM_EAST - VELACHERY_UTM_WEST) / 294,
+  pixelScaleY: (VELACHERY_UTM_NORTH - VELACHERY_UTM_SOUTH) / 331,
+  defaultWidth: 294,
+  defaultHeight: 331,
   noDataValue: -9999,
 };
 
@@ -73,6 +90,7 @@ export interface ParsedGeoTiff {
   data: Int16Array | Float32Array;
   rawBuffer: ArrayBuffer;
   rgbData?: [Uint8Array, Uint8Array, Uint8Array];
+  alphaData?: Uint8Array;
 }
 
 export interface YearlyWaterMaskItem {
@@ -106,6 +124,157 @@ export interface LegendItem {
   label: string;
   color: string;
   description?: string;
+}
+
+export const HISTORICAL_FLOOD_POINTS_COLOR = '#14532d';
+export const HISTORICAL_FLOOD_POINTS_LEGEND: LegendItem[] = [
+  {
+    value: 4,
+    label: 'Historical flood points',
+    color: HISTORICAL_FLOOD_POINTS_COLOR,
+  },
+];
+
+export function isHistoricalFloodPointsRaster(parsed: ParsedGeoTiff): boolean {
+  return parsed.metadata.filename === 'flood_points_vulnerability_overlay.tif';
+}
+
+export function reprojectGeoTiffToWebMercator(
+  parsed: ParsedGeoTiff
+): ParsedGeoTiff {
+  const { crsCode, nativeBounds, width, height, originX, originY, scaleX, scaleY } =
+    parsed.metadata;
+  if (crsCode === 3857) return parsed;
+
+  const [minX, minY, maxX, maxY] = nativeBounds;
+  const sourceCrs = `EPSG:${crsCode}`;
+  const projectedEdges: [number, number][] = [];
+  const edgeSteps = 32;
+
+  for (let step = 0; step <= edgeSteps; step += 1) {
+    const fraction = step / edgeSteps;
+    const x = minX + (maxX - minX) * fraction;
+    const y = minY + (maxY - minY) * fraction;
+    projectedEdges.push(
+      proj4(sourceCrs, 'EPSG:3857', [x, minY]),
+      proj4(sourceCrs, 'EPSG:3857', [x, maxY]),
+      proj4(sourceCrs, 'EPSG:3857', [minX, y]),
+      proj4(sourceCrs, 'EPSG:3857', [maxX, y])
+    );
+  }
+
+  if (!projectedEdges.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))) {
+    throw new Error(`Could not reproject ${parsed.metadata.filename} to EPSG:3857.`);
+  }
+
+  const projectedXs = projectedEdges.map(([x]) => x);
+  const projectedYs = projectedEdges.map(([, y]) => y);
+  const projectedMinX = Math.min(...projectedXs);
+  const projectedMaxX = Math.max(...projectedXs);
+  const projectedMinY = Math.min(...projectedYs);
+  const projectedMaxY = Math.max(...projectedYs);
+
+  const destinationWidth = width;
+  const destinationHeight = height;
+  const destinationData = new Int16Array(destinationWidth * destinationHeight);
+  destinationData.fill(-9999);
+
+  const destinationRgb = parsed.rgbData
+    ? ([
+        new Uint8Array(destinationData.length),
+        new Uint8Array(destinationData.length),
+        new Uint8Array(destinationData.length),
+      ] as [Uint8Array, Uint8Array, Uint8Array])
+    : undefined;
+  const destinationAlpha = parsed.rgbData
+    ? new Uint8Array(destinationData.length)
+    : undefined;
+  const projectedPixelWidth = (projectedMaxX - projectedMinX) / destinationWidth;
+  const projectedPixelHeight = (projectedMaxY - projectedMinY) / destinationHeight;
+
+  for (let row = 0; row < destinationHeight; row += 1) {
+    const projectedY =
+      projectedMaxY - (row + 0.5) * projectedPixelHeight;
+    for (let column = 0; column < destinationWidth; column += 1) {
+      const projectedX =
+        projectedMinX + (column + 0.5) * projectedPixelWidth;
+      const [sourceX, sourceY] = proj4(
+        'EPSG:3857',
+        sourceCrs,
+        [projectedX, projectedY]
+      );
+      const sourceColumn = Math.floor((sourceX - originX) / scaleX);
+      const sourceRow = Math.floor((originY - sourceY) / scaleY);
+      if (
+        sourceColumn < 0 ||
+        sourceColumn >= width ||
+        sourceRow < 0 ||
+        sourceRow >= height
+      ) {
+        continue;
+      }
+
+      const sourceIndex = sourceRow * width + sourceColumn;
+      const destinationIndex = row * destinationWidth + column;
+      destinationData[destinationIndex] = parsed.data[sourceIndex];
+      if (parsed.rgbData && destinationRgb) {
+        destinationRgb[0][destinationIndex] = parsed.rgbData[0][sourceIndex];
+        destinationRgb[1][destinationIndex] = parsed.rgbData[1][sourceIndex];
+        destinationRgb[2][destinationIndex] = parsed.rgbData[2][sourceIndex];
+        if (destinationAlpha) {
+          destinationAlpha[destinationIndex] =
+            parsed.data[sourceIndex] === -9999 ? 0 : 255;
+        }
+      }
+    }
+  }
+
+  const [west, south] = proj4('EPSG:3857', 'EPSG:4326', [
+    projectedMinX,
+    projectedMinY,
+  ]);
+  const [east, north] = proj4('EPSG:3857', 'EPSG:4326', [
+    projectedMaxX,
+    projectedMaxY,
+  ]);
+  const metadata = parsed.metadata;
+
+  return {
+    ...parsed,
+    metadata: {
+      ...metadata,
+      crs: 'EPSG:3857 (WGS 84 / Pseudo-Mercator)',
+      crsCode: 3857,
+      isProjected: true,
+      noDataValue: -9999,
+      originX: projectedMinX,
+      originY: projectedMaxY,
+      scaleX: projectedPixelWidth,
+      scaleY: projectedPixelHeight,
+      pixelWidth: projectedPixelWidth,
+      pixelHeight: projectedPixelHeight,
+      pixelWidthMeters: projectedPixelWidth,
+      pixelHeightMeters: projectedPixelHeight,
+      pixelAreaM2: projectedPixelWidth * projectedPixelHeight,
+      nativeBounds: [
+        projectedMinX,
+        projectedMinY,
+        projectedMaxX,
+        projectedMaxY,
+      ],
+      wgs84Bounds: { west, south, east, north },
+      width: destinationWidth,
+      height: destinationHeight,
+      totalPixels: destinationWidth * destinationHeight,
+      validPixels: destinationData.reduce(
+        (count, value) => count + (value === -9999 ? 0 : 1),
+        0
+      ),
+    },
+    data: destinationData,
+    rgbData: destinationRgb,
+    alphaData: destinationAlpha,
+  };
 }
 
 export const SLOPE_LEGEND: LegendItem[] = [
@@ -328,15 +497,23 @@ export function convertBoundsToWGS84(
   const epsgStr = `EPSG:${crsCode}`;
   try {
     if (crsCode === 32644 || crsCode === 32643 || crsCode === 3857) {
-      const [west, south] = proj4(epsgStr, 'EPSG:4326', [minX, minY]);
-      const [east, north] = proj4(epsgStr, 'EPSG:4326', [maxX, maxY]);
-      if (
-        Number.isFinite(south) &&
-        Number.isFinite(west) &&
-        Number.isFinite(north) &&
-        Number.isFinite(east)
-      ) {
-        return { south, west, north, east };
+      const geographicCorners = [
+        [minX, minY],
+        [minX, maxY],
+        [maxX, minY],
+        [maxX, maxY],
+      ].map(([x, y]) => proj4(epsgStr, 'EPSG:4326', [x, y]));
+      if (geographicCorners.every(([longitude, latitude]) =>
+        Number.isFinite(longitude) && Number.isFinite(latitude)
+      )) {
+        const longitudes = geographicCorners.map(([longitude]) => longitude);
+        const latitudes = geographicCorners.map(([, latitude]) => latitude);
+        return {
+          south: Math.min(...latitudes),
+          west: Math.min(...longitudes),
+          north: Math.max(...latitudes),
+          east: Math.max(...longitudes),
+        };
       }
     }
   } catch {
@@ -548,14 +725,14 @@ export function encodeGeoTiff(params: {
 
 /**
  * Generates an authoritative yearly `water_mask_YYYY.tif` GeoTIFF for
- * Velachery, Chennai, Tamil Nadu, India (EPSG:32644, 320x260 @ 10m resolution).
+ * Velachery, Chennai, Tamil Nadu, India (EPSG:32644, fitted to the Velachery AOI).
  * Reflects realistic year-by-year hydrological evolution (2019 baseline -> 2024 present,
  * including 2021 NE monsoon and 2023 Cyclone Michaung flood anomalies alongside progressive
  * eastern/northern shoreline encroachment).
  */
 export function generateVelacheryYearlyWaterMaskGeoTiff(year: number): ArrayBuffer {
-  const width = VELACHERY_STUDY_AREA.defaultWidth; // 320
-  const height = VELACHERY_STUDY_AREA.defaultHeight; // 260
+  const width = VELACHERY_STUDY_AREA.defaultWidth;
+  const height = VELACHERY_STUDY_AREA.defaultHeight;
   const data = new Int16Array(width * height);
   const noData = VELACHERY_STUDY_AREA.noDataValue;
 
@@ -1998,7 +2175,44 @@ export function renderGeoTiffToDataUrl(
       rgba[offset] = red[i];
       rgba[offset + 1] = green[i];
       rgba[offset + 2] = blue[i];
-      rgba[offset + 3] = 255;
+      rgba[offset + 3] = parsed.alphaData?.[i] ?? 255;
+    }
+    ctx.putImageData(imgData, 0, 0);
+    return canvas.toDataURL('image/png');
+  }
+
+  if (isHistoricalFloodPointsRaster(parsed)) {
+    const colorMap = new Map(
+      legend.map((item) => {
+        const hex = item.color.replace('#', '');
+        return [
+          item.value,
+          [
+            parseInt(hex.substring(0, 2), 16),
+            parseInt(hex.substring(2, 4), 16),
+            parseInt(hex.substring(4, 6), 16),
+          ] as const,
+        ];
+      })
+    );
+    for (let i = 0; i < width * height; i++) {
+      const value = parsed.data[i];
+      const offset = i * 4;
+      if (value >= 4 && value <= 6) {
+        rgba[offset + 3] = 0;
+      } else if (colorMap.get(value)) {
+        const color = colorMap.get(value);
+        if (!color) continue;
+        rgba[offset] = color[0];
+        rgba[offset + 1] = color[1];
+        rgba[offset + 2] = color[2];
+        rgba[offset + 3] = 235;
+      } else {
+        rgba[offset] = 0;
+        rgba[offset + 1] = 0;
+        rgba[offset + 2] = 0;
+        rgba[offset + 3] = 0;
+      }
     }
     ctx.putImageData(imgData, 0, 0);
     return canvas.toDataURL('image/png');
@@ -2208,6 +2422,7 @@ export function downloadGeoTiffBuffer(buffer: ArrayBuffer, filename: string): vo
 
 export interface IntermediateRasterItem {
   id: string;
+  stageId?: string;
   title: string;
   subtitle: string;
   filename: string;

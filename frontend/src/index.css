@@ -18,7 +18,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Crisp raster pixel rendering on Leaflet image overlays */
+/* Preserve crisp raster cells when GeoTIFFs are enlarged on the map. */
 .leaflet-image-layer.geotiff-raster-layer,
 .leaflet-pane .geotiff-raster-layer {
   image-rendering: pixelated;

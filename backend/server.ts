@@ -57,16 +57,15 @@ let waterChangeProgress = {
   message: 'Ready to run water change analysis.',
   currentStage: null as string | null,
   completedStages: 0,
-  totalStages: 4,
+  totalStages: 5,
 };
 let waterSegmentationRunning = false;
-let waterFlowImpactRunning = false;
-
 const ANALYSIS_STAGES = [
   { id: 'water-change', title: 'Water change', script: 'water_change.py' },
   { id: 'runoff-comparison', title: 'Runoff comparison', script: 'runoff_comparision.py' },
   { id: 'encroachment-runoff', title: 'Encroachment and runoff analysis', script: 'encroachment_runoff_analysis.py' },
-  { id: 'flood-vulnerability', title: 'Overall flood vulnerability', script: 'overall_flood_vulnerability.py' },
+  { id: 'water-flow-impact', title: 'Water-flow impact', script: 'water_flow_impact.py' },
+  { id: 'flood-validation', title: 'Historical flood validation', script: 'validation.py' },
 ] as const;
 
 type PipelineStageResult = {
@@ -75,6 +74,16 @@ type PipelineStageResult = {
   summary: string;
   note?: string;
   metrics: Array<{ label: string; value: number | string; unit?: string }>;
+  table?: {
+    headers: string[];
+    rows: Array<Array<string | number>>;
+  };
+  mapPoints?: Array<{
+    lat: number;
+    lng: number;
+    label: string;
+    vulnerabilityClass: string;
+  }>;
   layers: Array<{
     label: string;
     filename: string;
@@ -600,12 +609,7 @@ async function startServer() {
   app.post(
     ['/api/process/water-change', '/process/water-change'],
     async (req, res) => {
-      const isWaterFlowPipelineStart =
-        req.body?.runImpactPipeline === true &&
-        !waterFlowImpactRunning &&
-        waterChangeProgress.state === 'running' &&
-        waterChangeProgress.currentStage === 'water-flow-impact';
-      if (waterChangeProgress.state === 'running' && !isWaterFlowPipelineStart) {
+      if (waterChangeProgress.state === 'running') {
         return res.status(409).json({ error: 'Water change analysis is already running.' });
       }
 
@@ -701,7 +705,18 @@ async function startServer() {
             { label: 'Water gained', value: selected.statistics.waterGainAreaHa, unit: 'ha' },
             { label: 'Persistent water', value: selected.statistics.persistentWaterAreaHa, unit: 'ha' },
           ],
-          layers: [],
+          layers: [
+            {
+              label: `Water change ${selected.fromYear} → ${selected.toYear}`,
+              filename: selected.outputFilename,
+              legend: [
+                { value: 0, label: 'Unchanged non-water', color: '#1e293b' },
+                { value: 85, label: 'Stable core water', color: '#0284c7' },
+                { value: 170, label: 'Water loss', color: '#f43f5e' },
+                { value: 255, label: 'Water gain', color: '#22d3ee' },
+              ],
+            },
+          ],
           outputs: comparisons.map((comparison) => ({
             label: `Water change ${comparison.fromYear} → ${comparison.toYear}`,
             filename: comparison.outputFilename,
@@ -712,7 +727,7 @@ async function startServer() {
           completedStages: 1,
           currentComparison: null,
           currentStage: ANALYSIS_STAGES[1].id,
-          message: 'Step 2 of 4: comparing modeled runoff for 2017 and 2024.',
+          message: 'Step 2 of 5: comparing modeled runoff for 2017 and 2024.',
         };
 
         await runPythonScript(ANALYSIS_STAGES[1].script);
@@ -773,7 +788,7 @@ async function startServer() {
           ...waterChangeProgress,
           completedStages: 2,
           currentStage: ANALYSIS_STAGES[2].id,
-          message: 'Step 3 of 4: identifying runoff increases within potential encroachment areas.',
+          message: 'Step 3 of 5: identifying runoff increases within potential encroachment areas.',
         };
 
         await runPythonScript(ANALYSIS_STAGES[2].script);
@@ -852,10 +867,21 @@ async function startServer() {
           ...waterChangeProgress,
           completedStages: 3,
           currentStage: ANALYSIS_STAGES[3].id,
-          message: 'Step 4 of 4: combining the inputs into the overall flood-vulnerability index.',
+          message: 'Step 4 of 5: generating overall flood vulnerability from terrain, drainage, and runoff.',
         };
 
-        const floodOutput = await runPythonScript(ANALYSIS_STAGES[3].script);
+        if (!fs.existsSync(DRAINAGE_GEOJSON_PATH)) {
+          await runPythonScript('drainage_map.py');
+        }
+        if (!fs.existsSync(DRAINAGE_GEOJSON_PATH)) {
+          throw new Error(`Drainage map was not created: ${DRAINAGE_GEOJSON_PATH}`);
+        }
+
+        const waterFlowOutputDir = path.join(DATA_DIR, 'water_flow_impact');
+        await runPythonScript(ANALYSIS_STAGES[3].script, {
+          GEOAI_DATA_DIR: path.join(__dirname, 'data'),
+          WATER_FLOW_IMPACT_DIR: waterFlowOutputDir,
+        });
         const overallScorePath = path.join(
           DATA_DIR,
           'overall_flood_vulnerability',
@@ -876,48 +902,253 @@ async function startServer() {
           'overall_flood_vulnerability',
           'overall_flood_vulnerability_class.png'
         );
+        const overallVulnerabilityPath = path.join(
+          waterFlowOutputDir,
+          'overall_flood_vulnerability.tif'
+        );
+        const intermediatePreviewPath = path.join(
+          waterFlowOutputDir,
+          'intermediate_results.png'
+        );
         requireAnalysisOutputs([
           overallScorePath,
           overallClassPath,
           overallClassRgbPath,
           overallPreviewPath,
+          overallVulnerabilityPath,
+          intermediatePreviewPath,
+          ...[
+            'dem_for_hydrology.tif',
+            'gcc_drainage_raster.tif',
+            'distance_to_gcc_drain_m.tif',
+            'potential_encroachment_near_drain.tif',
+            'dem_filled.tif',
+            'slope_degrees.tif',
+            'flow_direction.tif',
+            'flow_accumulation_log_display.tif',
+            'terrain_flow_gcc_drain_overlap.tif',
+          ].map((filename) => path.join(waterFlowOutputDir, filename)),
         ]);
 
-        const overallClassCounts = ['Low', 'Moderate', 'High', 'Very High'].map((label) => {
-          const match = floodOutput.stdout.match(new RegExp(`${label}:\\s*(\\d+)\\s*cells`, 'i'));
-          if (!match) {
-            throw new Error(`Overall flood-vulnerability output is missing the "${label}" class count.`);
-          }
-          return { label, value: Number(match[1]) };
-        });
-        const meanOverallScore = floodOutput.stdout.match(/Mean overall score:\s*([0-9.eE+-]+)/);
-        if (!meanOverallScore) {
-          throw new Error('Overall flood-vulnerability output is missing the mean score.');
-        }
         waterChangePipelineResults.push({
-          id: 'flood-vulnerability',
-          title: 'Overall flood vulnerability',
-          summary: 'Combines existing relative vulnerability, runoff change, and encroachment-related runoff.',
+          id: 'water-flow-impact',
+          title: 'Water-flow impact',
+          summary: 'Derives terrain flow and combines terrain, drainage proximity, and runoff indicators into overall flood-vulnerability classes.',
           note: 'Preliminary relative screening index, not a flood forecast.',
-          metrics: [
-            { label: 'Mean index score', value: Number(meanOverallScore[1]) },
-            ...overallClassCounts,
-          ],
+          metrics: [],
           layers: [
             {
-              label: 'Overall relative flood-vulnerability classes',
-              filename: path.basename(overallClassRgbPath),
+              label: 'Cleaned elevation model',
+              filename: 'dem_for_hydrology.tif',
+              legend: [],
+            },
+            {
+              label: 'Rasterized GCC drainage',
+              filename: 'gcc_drainage_raster.tif',
               legend: [
-                { value: 1, label: 'Low', color: '#22c55e' },
-                { value: 2, label: 'Moderate', color: '#eab308' },
-                { value: 3, label: 'High', color: '#f97316' },
-                { value: 4, label: 'Very High', color: '#dc2626' },
+                { value: 0, label: 'No drainage', color: '#1e293b' },
+                { value: 1, label: 'Mapped drainage', color: '#06b6d4' },
+              ],
+            },
+            {
+              label: 'Distance to drainage',
+              filename: 'distance_to_gcc_drain_m.tif',
+              legend: [],
+            },
+            {
+              label: 'Potential encroachment near drains',
+              filename: 'potential_encroachment_near_drain.tif',
+              legend: [
+                { value: 0, label: 'Not flagged', color: '#1e293b' },
+                { value: 255, label: 'Near drainage', color: '#f43f5e' },
+              ],
+            },
+            {
+              label: 'Depression-filled DEM',
+              filename: 'dem_filled.tif',
+              legend: [],
+            },
+            {
+              label: 'Terrain slope',
+              filename: 'slope_degrees.tif',
+              legend: [],
+            },
+            {
+              label: 'D8 flow direction',
+              filename: 'flow_direction.tif',
+              legend: [
+                { value: 1, label: 'East', color: '#ef4444' },
+                { value: 2, label: 'Northeast', color: '#f97316' },
+                { value: 4, label: 'North', color: '#eab308' },
+                { value: 8, label: 'Northwest', color: '#22c55e' },
+                { value: 16, label: 'West', color: '#06b6d4' },
+                { value: 32, label: 'Southwest', color: '#3b82f6' },
+                { value: 64, label: 'South', color: '#a855f7' },
+                { value: 128, label: 'Southeast', color: '#ec4899' },
+              ],
+            },
+            {
+              label: 'Log-scaled flow accumulation',
+              filename: 'flow_accumulation_log_display.tif',
+              legend: [],
+            },
+            {
+              label: 'Terrain-flow and drainage overlap',
+              filename: 'terrain_flow_gcc_drain_overlap.tif',
+              legend: [
+                { value: 0, label: 'No overlap', color: '#1e293b' },
+                { value: 255, label: 'Flow / drain overlap', color: '#8b5cf6' },
+              ],
+            },
+            {
+              label: 'Overall flood vulnerability',
+              filename: 'overall_flood_vulnerability.tif',
+              legend: [
+                { value: 0, label: 'Outside analysis', color: '#ffffff' },
+                { value: 1, label: 'Low', color: '#00aa00' },
+                { value: 2, label: 'Moderate', color: '#ffdc00' },
+                { value: 3, label: 'High', color: '#dc0000' },
               ],
             },
           ],
           outputs: [
-            { label: 'Overall vulnerability class RGB map', filename: path.basename(overallClassRgbPath) },
-            { label: 'Continuous vulnerability score', filename: path.basename(overallScorePath) },
+            { label: 'Overall flood vulnerability raster', filename: path.basename(overallVulnerabilityPath) },
+          ],
+        });
+
+        waterChangeProgress = {
+          ...waterChangeProgress,
+          completedStages: 4,
+          currentStage: ANALYSIS_STAGES[4].id,
+          message: 'Step 5 of 5: validating overall vulnerability against historical flood locations.',
+        };
+
+        await runPythonScript(ANALYSIS_STAGES[4].script, {
+          GEOAI_DATA_DIR: path.join(__dirname, 'data'),
+        });
+        const validationOverlayPath = path.join(
+          DATA_DIR,
+          'flood_validation',
+          'coverage_analysis',
+          'flood_points_vulnerability_overlay.tif'
+        );
+        const validationSummaryPath = path.join(
+          DATA_DIR,
+          'flood_validation',
+          'coverage_analysis',
+          'vulnerability_coverage_summary.csv'
+        );
+        const validationPointsPath = path.join(
+          DATA_DIR,
+          'flood_validation',
+          'coverage_analysis',
+          'flood_points_with_vulnerability.csv'
+        );
+        requireAnalysisOutputs([
+          validationOverlayPath,
+          validationSummaryPath,
+          validationPointsPath,
+        ]);
+
+        const validationLines = fs.readFileSync(validationSummaryPath, 'utf-8')
+          .split(/\r?\n/)
+          .filter((line) => line.trim());
+        const validationHeaders = parseCsvLine(validationLines[0]);
+        const validationRows = validationLines.slice(1).map((line) => {
+          const values = parseCsvLine(line);
+          return Object.fromEntries(
+            validationHeaders.map((header, index) => [header, values[index] ?? ''])
+          );
+        });
+        if (validationRows.length === 0) {
+          throw new Error('Flood validation summary contains no vulnerability classes.');
+        }
+        const totalReferencePoints = fs.readFileSync(validationPointsPath, 'utf-8')
+          .split(/\r?\n/)
+          .filter((line) => line.trim()).length - 1;
+        const pointLines = fs.readFileSync(validationPointsPath, 'utf-8')
+          .split(/\r?\n/)
+          .filter((line) => line.trim());
+        const pointHeaders = parseCsvLine(pointLines[0]);
+        const pointRows = pointLines.slice(1).map((line) => {
+          const values = parseCsvLine(line);
+          return Object.fromEntries(
+            pointHeaders.map((header, index) => [header, values[index] ?? ''])
+          );
+        });
+        const mapPoints = pointRows.map((row, index) => {
+          const lat = numericField(row, 'latitude');
+          const lng = numericField(row, 'longitude');
+          if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+            throw new Error(`Historical flood point ${index + 1} has invalid coordinates.`);
+          }
+          return {
+            lat,
+            lng,
+            label: row.location || row.Name || `Historical flood point ${index + 1}`,
+            vulnerabilityClass: row.predicted_class || 'Unclassified',
+          };
+        });
+        if (mapPoints.length !== totalReferencePoints) {
+          throw new Error(
+            `Expected coordinates for ${totalReferencePoints} historical flood points, found ${mapPoints.length}.`
+          );
+        }
+        const classRows = validationRows.filter((row) =>
+          ['Low', 'Moderate', 'High'].includes(row.vulnerability_class)
+        );
+        if (classRows.length === 0) {
+          throw new Error('Flood validation summary contains no vulnerability classes.');
+        }
+        const validReferencePoints = classRows.reduce(
+          (total, row) => total + numericField(row, 'point_count'),
+          0
+        );
+        const validationTableHeaders = [
+          'Vulnerability class',
+          'Score range',
+          'Historical points',
+          'Share of valid points (%)',
+        ];
+        const validationTableRows = validationRows.map((row) => [
+          row.vulnerability_class,
+          row.score_range,
+          numericField(row, 'point_count'),
+          numericField(row, 'percentage_of_valid_points'),
+        ]);
+        waterChangePipelineResults.push({
+          id: 'flood-validation',
+          title: 'Historical flood validation',
+          summary: 'Samples the overall vulnerability score at historical flood locations and summarizes the number and share of points in each class.',
+          note: `Historical locations with valid raster scores: ${validReferencePoints} of ${totalReferencePoints}. Historical points are marked in dark blue on the GeoTIFF overlay.`,
+          metrics: [
+            { label: 'Historical points', value: totalReferencePoints },
+            { label: 'Points with raster scores', value: validReferencePoints },
+            ...classRows.map((row) => ({
+              label: `${row.vulnerability_class} flood-point coverage`,
+              value: numericField(row, 'percentage_of_valid_points'),
+              unit: '%',
+            })),
+          ],
+          table: {
+            headers: validationTableHeaders,
+            rows: validationTableRows,
+          },
+          mapPoints,
+          layers: [
+            {
+              label: 'Historical flood points over vulnerability classes',
+              filename: path.basename(validationOverlayPath),
+              legend: [
+                { value: 1, label: 'Low vulnerability', color: '#22c55e' },
+                { value: 2, label: 'Moderate vulnerability', color: '#eab308' },
+                { value: 3, label: 'High vulnerability', color: '#dc2626' },
+                { value: 4, label: 'Historical flood points', color: '#14532d' },
+              ],
+            },
+          ],
+          outputs: [
+            { label: 'Historical flood validation overlay', filename: path.basename(validationOverlayPath) },
           ],
         });
 
@@ -927,7 +1158,7 @@ async function startServer() {
           currentComparison: null,
           currentStage: null,
           completedStages: ANALYSIS_STAGES.length,
-          message: 'All four analysis stages completed successfully.',
+          message: 'All five analysis stages completed, including historical flood validation.',
         };
 
         res.json({
@@ -1170,90 +1401,6 @@ async function startServer() {
     }
   );
 
-  app.post(
-    ['/api/process/water-flow-impact', '/process/water-flow-impact'],
-    async (_req, res) => {
-      if (
-        waterFlowImpactRunning ||
-        (waterChangeProgress.state === 'running' &&
-          waterChangeProgress.currentStage !== 'water-flow-impact')
-      ) {
-        return res.status(409).json({ error: 'A water-impact analysis is already running.' });
-      }
-
-      waterFlowImpactRunning = true;
-      waterChangeProgress = {
-        state: 'running',
-        completedComparisons: 0,
-        totalComparisons: SUPPORTED_WATER_CHANGE_COMPARISONS.length,
-        currentComparison: null,
-        message: 'Preparing water-flow impact layers before the water-impact analysis.',
-        currentStage: 'water-flow-impact',
-        completedStages: 0,
-        totalStages: ANALYSIS_STAGES.length,
-      };
-      waterChangePipelineResults = [];
-
-      try {
-        if (!fs.existsSync(DRAINAGE_GEOJSON_PATH)) {
-          await runPythonScript('drainage_map.py');
-        }
-        if (!fs.existsSync(DRAINAGE_GEOJSON_PATH)) {
-          throw new Error(`Drainage map was not created: ${DRAINAGE_GEOJSON_PATH}`);
-        }
-
-        const outputDir = path.join(DATA_DIR, 'water_flow_impact');
-        await runPythonScript('water_flow_impact.py', {
-          GEOAI_DATA_DIR: path.join(__dirname, 'data'),
-          WATER_FLOW_IMPACT_DIR: outputDir,
-        });
-
-        const outputFilenames = [
-          'dem_for_hydrology.tif',
-          'gcc_drainage_raster.tif',
-          'distance_to_gcc_drain_m.tif',
-          'potential_encroachment_near_drain.tif',
-          'dem_filled.tif',
-          'slope_degrees.tif',
-          'flow_direction.tif',
-          'flow_accumulation.tif',
-          'flow_accumulation_log_display.tif',
-          'terrain_flow_gcc_drain_overlap.tif',
-          'relative_flood_vulnerability.tif',
-          'flow_direction_display.tif',
-          'relative_flood_vulnerability_display.tif',
-        ];
-        const missingOutputs = outputFilenames.filter(
-          (filename) => !fs.existsSync(path.join(outputDir, filename))
-        );
-        if (missingOutputs.length > 0) {
-          throw new Error(`Water-flow outputs are missing: ${missingOutputs.join(', ')}`);
-        }
-
-        res.json({
-          status: 'completed',
-          step: 'water_flow_impact',
-          studyArea: 'Velachery, Chennai',
-          outputs: outputFilenames.map((outputFilename) => ({
-            outputFilename,
-            rasterUrl: `/api/raster/${outputFilename}`,
-          })),
-        });
-      } catch (err: any) {
-        waterChangeProgress = {
-          ...waterChangeProgress,
-          state: 'failed',
-          message: `Water-flow impact GIS execution failed: ${String(err?.message || err)}`,
-        };
-        res.status(500).json({
-          error: `Water-flow impact GIS execution failed: ${String(err?.message || err)}`,
-        });
-      } finally {
-        waterFlowImpactRunning = false;
-      }
-    }
-  );
-
   // Stream GeoTIFF raster file
   app.get(['/api/raster/:filename', '/raster/:filename'], (req, res) => {
     const safeName = path.basename(req.params.filename);
@@ -1263,6 +1410,7 @@ async function startServer() {
       path.join(DATA_DIR, 'lulc_analysis', safeName),
       path.join(DATA_DIR, 'potential_encroachment', safeName),
       path.join(DATA_DIR, 'water_flow_impact', safeName),
+      path.join(DATA_DIR, 'flood_validation', 'coverage_analysis', safeName),
       path.join(DATA_DIR, 'runoff_comparison', safeName),
       path.join(DATA_DIR, 'runoff_comparison', 'display_rgb', safeName),
       path.join(DATA_DIR, 'encroachment_runoff', safeName),

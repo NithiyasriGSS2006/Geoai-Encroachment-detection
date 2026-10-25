@@ -5,6 +5,7 @@ import {
   ImageOverlay,
   Rectangle,
   CircleMarker,
+  Pane,
   Tooltip,
   useMap,
   useMapEvents,
@@ -34,13 +35,16 @@ import {
   LegendItem,
   getSlopeLegendItem,
   isSlopeRaster,
+  isHistoricalFloodPointsRaster,
   SLOPE_LEGEND,
   VELACHERY_STUDY_AREA,
   isFlowDirectionRaster,
   renderFlowDirectionToDataUrl,
   renderSlopeToDataUrl,
   renderGeoTiffToDataUrl,
+  reprojectGeoTiffToWebMercator,
 } from '../utils/geotiffEngine';
+import type { AnalysisPipelineMapPoint } from './AnalysisPipelinePanel';
 
 interface VelacheryGeoMapProps {
   raster: ParsedGeoTiff | null;
@@ -49,9 +53,21 @@ interface VelacheryGeoMapProps {
   outputFilename?: string;
   focusTrigger?: number;
   compact?: boolean;
+  historicalFloodPoints?: AnalysisPipelineMapPoint[];
 }
 
 type BaseMapType = 'osm' | 'positron' | 'dark' | 'satellite';
+
+const VELACHERY_AOI_WGS84_BOUNDS = {
+  south: 12.9750,
+  west: 80.1950,
+  north: 13.0050,
+  east: 80.2220,
+};
+const VELACHERY_AOI_BOUNDS = L.latLngBounds(
+  [VELACHERY_AOI_WGS84_BOUNDS.south, VELACHERY_AOI_WGS84_BOUNDS.west],
+  [VELACHERY_AOI_WGS84_BOUNDS.north, VELACHERY_AOI_WGS84_BOUNDS.east]
+);
 
 const FLOW_DIRECTION_ICONS: Record<number, LucideIcon> = {
   1: ArrowRight,
@@ -147,17 +163,19 @@ function MapBoundsController({
   focusTrigger,
   isFullscreen,
 }: {
-  bounds: L.LatLngBoundsExpression;
+  bounds: L.LatLngBounds;
   focusTrigger: number;
   isFullscreen: boolean;
 }) {
   const map = useMap();
 
   useEffect(() => {
+    map.setMaxBounds(bounds);
+    map.setMinZoom(map.getBoundsZoom(bounds));
     map.invalidateSize();
     const timer = setTimeout(() => {
       map.invalidateSize();
-      map.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 });
+      map.fitBounds(bounds, { padding: [0, 0], maxZoom: 19 });
     }, 80);
     return () => clearTimeout(timer);
   }, [map, bounds, focusTrigger, isFullscreen]);
@@ -272,6 +290,7 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
   outputFilename,
   focusTrigger = 0,
   compact = false,
+  historicalFloodPoints = [],
 }) => {
   const [baseMap, setBaseMap] = useState<BaseMapType>('osm');
   const [opacity, setOpacity] = useState<number>(0.84);
@@ -291,18 +310,18 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
     color: string | null;
   } | null>(null);
 
-  // Authoritative geographic bounds from the GeoTIFF metadata (or Velachery default before upload)
+  const displayRaster = useMemo(
+    () => (raster ? reprojectGeoTiffToWebMercator(raster) : null),
+    [raster]
+  );
+
+  // Leaflet uses Web Mercator, so render a reprojected copy of the source raster.
   const wgs84Bounds = useMemo(() => {
-    if (raster) {
-      return raster.metadata.wgs84Bounds;
+    if (displayRaster) {
+      return displayRaster.metadata.wgs84Bounds;
     }
-    return {
-      south: 12.967518,
-      west: 80.201654,
-      north: 12.991096,
-      east: 80.231215,
-    };
-  }, [raster]);
+    return VELACHERY_AOI_WGS84_BOUNDS;
+  }, [displayRaster]);
 
   const leafletBounds = useMemo<L.LatLngBoundsExpression>(
     () => [
@@ -312,22 +331,24 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
     [wgs84Bounds]
   );
 
-  // Render the actual GeoTIFF pixel matrix into a georeferenced RGBA overlay
-  const rasterDataUrl = useMemo(() => {
-    if (!raster) return null;
-    if (isFlowDirectionRaster(raster)) {
-      return renderFlowDirectionToDataUrl(raster);
-    }
-    if (isSlopeRaster(raster)) {
-      return renderSlopeToDataUrl(raster);
-    }
-    return renderGeoTiffToDataUrl(raster, legend, transparentZero);
-  }, [raster, legend, transparentZero]);
+  const mapViewBounds = VELACHERY_AOI_BOUNDS;
 
-  const visibleLegend = raster
-    ? isFlowDirectionRaster(raster)
+  // Render the reprojected raster into Leaflet's Web Mercator map.
+  const rasterDataUrl = useMemo(() => {
+    if (!displayRaster) return null;
+    if (isFlowDirectionRaster(displayRaster)) {
+      return renderFlowDirectionToDataUrl(displayRaster);
+    }
+    if (isSlopeRaster(displayRaster)) {
+      return renderSlopeToDataUrl(displayRaster);
+    }
+    return renderGeoTiffToDataUrl(displayRaster, legend, transparentZero);
+  }, [displayRaster, legend, transparentZero]);
+
+  const visibleLegend = displayRaster
+    ? isFlowDirectionRaster(displayRaster)
       ? FLOW_DIRECTION_LEGEND
-      : isSlopeRaster(raster)
+      : isSlopeRaster(displayRaster)
       ? SLOPE_LEGEND
       : legend
     : legend;
@@ -340,12 +361,12 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
     <div
       className={
         isFullscreen
-          ? 'fixed inset-0 z-50 bg-slate-950 flex flex-col'
+          ? 'fixed inset-0 z-50 h-dvh bg-slate-950 flex flex-col overflow-hidden'
           : 'relative w-full flex flex-col border border-slate-800 bg-slate-900/70 rounded-lg overflow-hidden'
       }
     >
       {/* Top Map Control Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-900 border-b border-slate-800 text-xs">
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-900 border-b border-slate-800 text-xs">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="flex items-center gap-1.5 font-semibold text-slate-100 whitespace-nowrap">
             <MapPin className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
@@ -461,7 +482,7 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
               type="button"
               onClick={handleFitStudyArea}
               className="flex items-center gap-1 px-2.5 py-1 rounded bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25 text-[11px] font-medium transition-colors whitespace-nowrap"
-              title="Zoom map to Velachery GeoTIFF raster extent"
+              title="Zoom map to the Velachery area of interest"
             >
               <Crosshair className="w-3 h-3" />
               Fit to Study Area
@@ -488,15 +509,17 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
       <div
         className={`relative w-full ${
           isFullscreen
-            ? 'flex-1'
+            ? 'min-h-0 flex-1'
             : compact
             ? 'h-[250px]'
             : 'h-[460px] lg:h-[520px]'
         }`}
       >
         <MapContainer
-          center={[VELACHERY_STUDY_AREA.centerLat, VELACHERY_STUDY_AREA.centerLng]}
+          center={mapViewBounds.getCenter()}
           zoom={14}
+          maxBounds={mapViewBounds}
+          maxBoundsViscosity={1}
           scrollWheelZoom={true}
           className="w-full h-full z-0 cursor-crosshair"
         >
@@ -508,13 +531,13 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
           />
 
           <MapBoundsController
-            bounds={leafletBounds}
+            bounds={mapViewBounds}
             focusTrigger={focusTrigger + fitCount}
             isFullscreen={isFullscreen}
           />
 
           <RasterPixelInspector
-            raster={raster}
+            raster={displayRaster}
             legend={legend}
             onHoverPixel={setHoverInfo}
           />
@@ -528,6 +551,36 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
               className="geotiff-raster-layer"
               zIndex={400}
             />
+          )}
+
+          {raster &&
+            isHistoricalFloodPointsRaster(raster) &&
+            historicalFloodPoints.length > 0 && (
+            <Pane name="historicalFloodPoints" style={{ zIndex: 650 }}>
+              {historicalFloodPoints.map((point, index) => (
+                <CircleMarker
+                  key={`${point.lat}-${point.lng}-${index}`}
+                  center={[point.lat, point.lng]}
+                  radius={6}
+                  pane="historicalFloodPoints"
+                  pathOptions={{
+                    color: '#000000',
+                    weight: 2,
+                    fillColor: '#14532d',
+                    fillOpacity: 1,
+                  }}
+                >
+                  <Tooltip direction="top" offset={[0, -4]} opacity={0.95}>
+                    <div className="text-xs font-sans">
+                      <div className="font-semibold text-slate-900">{point.label}</div>
+                      <div className="text-[11px] text-slate-600">
+                        Historical flood point · {point.vulnerabilityClass}
+                      </div>
+                    </div>
+                  </Tooltip>
+                </CircleMarker>
+              ))}
+            </Pane>
           )}
 
           {/* Authoritative GeoTIFF Bounding Box Outline */}
@@ -578,12 +631,18 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
             STUDY AREA: VELACHERY, CHENNAI
           </div>
           <div className="text-[11px] text-slate-300">
-            Tamil Nadu, India · {raster ? raster.metadata.crs : VELACHERY_STUDY_AREA.crsName}
+            Tamil Nadu, India · {raster ? `Raster CRS: ${raster.metadata.crs}` : VELACHERY_STUDY_AREA.crsName}
           </div>
           <div className="font-mono text-[10px] text-slate-400 tabular-nums mt-0.5">
-            Bounds: [{wgs84Bounds.south.toFixed(4)}°N, {wgs84Bounds.west.toFixed(4)}°E] to [
-            {wgs84Bounds.north.toFixed(4)}°N, {wgs84Bounds.east.toFixed(4)}°E]
+            Study AOI: [{VELACHERY_AOI_WGS84_BOUNDS.south.toFixed(4)}°N, {VELACHERY_AOI_WGS84_BOUNDS.west.toFixed(4)}°E] to [
+            {VELACHERY_AOI_WGS84_BOUNDS.north.toFixed(4)}°N, {VELACHERY_AOI_WGS84_BOUNDS.east.toFixed(4)}°E]
           </div>
+          {raster && (
+            <div className="font-mono text-[10px] text-slate-400 tabular-nums">
+              Raster coverage: [{wgs84Bounds.south.toFixed(4)}°N, {wgs84Bounds.west.toFixed(4)}°E] to [
+              {wgs84Bounds.north.toFixed(4)}°N, {wgs84Bounds.east.toFixed(4)}°E]
+            </div>
+          )}
         </div>
 
         {/* Bottom-Left Live Pixel Probe Readout */}
@@ -670,7 +729,13 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
                       />
                     ) : (
                       <span
-                        className="w-3 h-3 rounded-xs shrink-0 border border-white/15"
+                        className={`w-3 h-3 shrink-0 border ${
+                          raster &&
+                          isHistoricalFloodPointsRaster(raster) &&
+                          item.value === 4
+                            ? 'rounded-full border-slate-950'
+                            : 'rounded-xs border-white/15'
+                        }`}
                         style={{ backgroundColor: item.color }}
                       />
                     )}
