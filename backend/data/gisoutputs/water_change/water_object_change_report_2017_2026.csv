@@ -1,0 +1,6 @@
+year_pair,reference_year,object_id,reference_area_ha,related_objects_in_other_year,lost_area_ha,change_class,gained_area_ha
+2017_2026,2017,1,0.19,1,0.02,Contracted,
+2017_2026,2017,2,21.66,1,1.0,Contracted,
+2017_2026,2026,1,0.19,1,0.0,Expanded,0.02
+2017_2026,2026,2,22.54,1,0.0,Expanded,1.88
+2017_2026,2026,3,0.02,0,0.0,New water body,0.02

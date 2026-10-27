@@ -1,0 +1,5 @@
+year_pair,reference_year,object_id,reference_area_ha,related_objects_in_other_year,lost_area_ha,change_class,gained_area_ha
+2017_2023,2017,1,0.19,1,0.01,Contracted,
+2017_2023,2017,2,21.66,1,1.77,Contracted,
+2017_2023,2023,1,0.24,1,0.0,Expanded,0.06
+2017_2023,2023,2,19.94,1,0.0,Expanded,0.05

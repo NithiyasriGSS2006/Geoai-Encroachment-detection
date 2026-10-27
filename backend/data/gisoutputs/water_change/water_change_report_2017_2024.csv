@@ -1,22 +1,31 @@
 Parameter,Value
+Methodology,Polygon-based geometric change detection
 Historical Year,2017
 Current Year,2024
-Pixel Size (m),10.0
+CRS,EPSG:32644
+Pixel Size X (m),10.0
+Pixel Size Y (m),10.0
 Pixel Area (m2),100.0
-Historical Water Pixels,2178
-Historical Water Area (ha),21.78
-Current Water Pixels,1950
-Current Water Area (ha),19.5
-Water Loss Pixels,248
-Water Loss Area (m2),24800.0
-Water Loss (ha),2.48
-Water Gain Pixels,20
-Water Gain Area (m2),2000.0
-Water Gain (ha),0.2
-Persistent Water Pixels,1930
-Persistent Water (ha),19.3
-Net Water Change (ha),-2.28
-Percentage Change (%),-10.46831955922865
-Persistent Non-water Pixels,16114
-Water Loss Transition Pixels,248
-Water Gain Transition Pixels,20
+Historical Water Objects,2
+Historical Water Pixels (input mask statistic),2185
+Historical Water Area (m2),218500.0
+Historical Water Area (ha),21.85
+Current Water Objects,2
+Current Water Pixels (input mask statistic),2014
+Current Water Area (m2),201400.0
+Current Water Area (ha),20.14
+Water Loss Polygon Count,32
+Water Loss Area (m2),18400.0
+Water Loss (ha),1.84
+Water Gain Polygon Count,7
+Water Gain Area (m2),1300.0
+Water Gain (ha),0.13
+Net Water Change (ha),-1.71
+Percentage Change (%),-7.82608695652174
+Object Intersection Relationships,2
+Persistent Assessment,Not performed
+Transition Matrix,Not performed; pixel-wise method removed
+Object-level Report,C:\Users\nithi\Downloads\project_geoAI (2) - Copy\project_geoAI\backend\data\gisoutputs\water_change\water_object_change_report_2017_2024.csv
+Object Relationships GeoJSON,C:\Users\nithi\Downloads\project_geoAI (2) - Copy\project_geoAI\backend\data\gisoutputs\water_change\water_object_relationships_2017_2024.geojson
+Water Loss Polygons GeoJSON,C:\Users\nithi\Downloads\project_geoAI (2) - Copy\project_geoAI\backend\data\gisoutputs\water_change\water_loss_polygons_2017_2024.geojson
+Water Gain Polygons GeoJSON,C:\Users\nithi\Downloads\project_geoAI (2) - Copy\project_geoAI\backend\data\gisoutputs\water_change\water_gain_polygons_2017_2024.geojson

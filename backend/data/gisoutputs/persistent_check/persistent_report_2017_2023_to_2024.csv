@@ -1,13 +1,23 @@
 Parameter,Value
 Earlier Comparison,2017-2023
 Later Comparison,2017-2024
+Method,Polygon intersection and difference
+CRS,EPSG:32644
 Pixel Width (m),10.0
 Pixel Height (m),10.0
 Pixel Area (m2),100.0
-Condition 1 Pixels,178
-Condition 2 Pixels,70
-Condition 3 Pixels,27
-Condition 4 Pixels,18037
-Persistent Encroachment Pixels,248
-Persistent Encroachment Area (m2),24800.0
-Persistent Encroachment Area (ha),2.48
+Condition 1 Area (m2),12200.0
+Condition 1 Area (ha),1.22
+Condition 1 Rasterized Cells,122
+Condition 2 Area (m2),0.0
+Condition 2 Area (ha),0.0
+Condition 2 Rasterized Cells,0
+Condition 3 Area (m2),0.0
+Condition 3 Area (ha),0.0
+Condition 3 Rasterized Cells,0
+Condition 4 Area (m2),0.0
+Condition 4 Area (ha),0.0
+Condition 4 Rasterized Cells,0
+Persistent Encroachment Area (m2),12200.0
+Persistent Encroachment Area (ha),1.22
+Persistent Encroachment Rasterized Cells,122

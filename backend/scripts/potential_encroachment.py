@@ -1,39 +1,39 @@
+
 # ============================================================
 # MODULE 05 - POTENTIAL ENCROACHMENT DETECTION
 # VELACHERY
 #
-# INPUT:
-#   Persistent encroachment raster
-#   2024 Dynamic World LULC
+# METHOD:
+# Polygonization + Geometric Intersection
 #
 # LOGIC:
+# Persistent encroachment polygons
+#             INTERSECTION
+# 2024 Built-up polygons (Dynamic World class 6)
+#             =
+# Potential encroachment polygons
 #
-# Persistent encroachment
-# AND
-# 2024 LULC = Built-up
-#
-#             ↓
-#
-# Potential Encroachment
-#
-# OUTPUT:
-#   1. Potential encroachment GeoTIFF
-#   2. Display GeoTIFF
-#
-# Area is calculated using polygons.
+# OUTPUTS:
+# 1. potential_encroachment_2017_2023.tif
+# 2. potential_encroachment_2017_2024.tif
+# 3. Existing display GeoTIFFs
+# 4. potential_encroachment_report.csv
+# 5. Potential encroachment GeoJSON polygons
 # ============================================================
-
 
 import os
 import csv
-import rasterio
 import numpy as np
-
-# NEW IMPORTS FOR POLYGON AREA
-from rasterio.features import shapes
+import rasterio
 import geopandas as gpd
-from shapely.geometry import shape
 
+from rasterio.features import shapes, rasterize
+from shapely.geometry import shape, mapping
+
+
+# ============================================================
+# 1. PROJECT PATHS
+# ============================================================
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(SCRIPT_DIR)
@@ -67,18 +67,19 @@ LULC_2024_PATH = os.environ.get(
 
 OUTPUT_FOLDER = os.environ.get(
     "OUTPUT_FOLDER",
-    os.path.join(BASE_DIR, "data", "gisoutputs", "potential_encroachment")
+    os.path.join(
+        BASE_DIR,
+        "data",
+        "gisoutputs",
+        "potential_encroachment"
+    )
 )
 
-
-os.makedirs(
-    OUTPUT_FOLDER,
-    exist_ok=True
-)
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 
 # ============================================================
-# 3. OUTPUT FILES
+# 2. OUTPUT FILES
 # ============================================================
 
 OUTPUT_2017_2023 = os.path.join(
@@ -86,101 +87,71 @@ OUTPUT_2017_2023 = os.path.join(
     "potential_encroachment_2017_2023.tif"
 )
 
-
 OUTPUT_2017_2024 = os.path.join(
     OUTPUT_FOLDER,
     "potential_encroachment_2017_2024.tif"
 )
-
 
 DISPLAY_2017_2023 = os.path.join(
     OUTPUT_FOLDER,
     "potential_encroachment_display_2017_2023.tif"
 )
 
-
 DISPLAY_2017_2024 = os.path.join(
     OUTPUT_FOLDER,
     "potential_encroachment_display_2017_2024.tif"
 )
 
+GEOJSON_2017_2023 = os.path.join(
+    OUTPUT_FOLDER,
+    "potential_encroachment_2017_2023.geojson"
+)
 
-# ============================================================
-# 4. BUILT-UP CLASS
-# ============================================================
-#
-# Dynamic World:
-#
-# 6 = Built
-#
-# ============================================================
+GEOJSON_2017_2024 = os.path.join(
+    OUTPUT_FOLDER,
+    "potential_encroachment_2017_2024.geojson"
+)
+
+REPORT_PATH = os.path.join(
+    OUTPUT_FOLDER,
+    "potential_encroachment_report.csv"
+)
 
 BUILT_UP_CLASS = 6
 
 
 # ============================================================
-# 5. CHECK INPUT FILES
+# 3. CHECK INPUT FILES
 # ============================================================
 
 input_files = [
-
     PERSISTENT_2017_2020_2023_PATH,
-
     PERSISTENT_2017_2023_2024_PATH,
-
     LULC_2024_PATH
-
 ]
 
-
 for path in input_files:
-
     if not os.path.exists(path):
-
         raise FileNotFoundError(
-            f"\nInput file not found:\n{path}"
+            f"Input file not found:\n{path}"
         )
 
 
 # ============================================================
-# 6. READ PERSISTENT 2017->2023
+# 4. READ RASTERS
 # ============================================================
-
-print("\n")
-print("=" * 60)
-print("READING PERSISTENT ENCROACHMENT 2017->2023")
-print("=" * 60)
-
 
 with rasterio.open(
     PERSISTENT_2017_2020_2023_PATH
 ) as src:
 
     persistent_2017_2023 = src.read(1)
+    profile = src.profile.copy()
 
-    width_1 = src.width
-    height_1 = src.height
-
-    crs_1 = src.crs
-    transform_1 = src.transform
-
-    profile_1 = src.profile.copy()
-
-
-print(
-    "Unique values:",
-    np.unique(persistent_2017_2023)
-)
-
-
-# ============================================================
-# 7. READ PERSISTENT 2017->2024
-# ============================================================
-
-print("\n")
-print("=" * 60)
-print("READING PERSISTENT ENCROACHMENT 2017->2024")
-print("=" * 60)
+    width = src.width
+    height = src.height
+    crs = src.crs
+    transform = src.transform
 
 
 with rasterio.open(
@@ -189,533 +160,372 @@ with rasterio.open(
 
     persistent_2017_2024 = src.read(1)
 
-    width_2 = src.width
-    height_2 = src.height
-
-    crs_2 = src.crs
-    transform_2 = src.transform
-
-
-print(
-    "Unique values:",
-    np.unique(persistent_2017_2024)
-)
+    if (
+        src.width != width
+        or src.height != height
+        or src.crs != crs
+        or src.transform != transform
+    ):
+        raise ValueError(
+            "The two persistent rasters are not aligned."
+        )
 
 
-# ============================================================
-# 8. READ 2024 LULC
-# ============================================================
-
-print("\n")
-print("=" * 60)
-print("READING 2024 LULC")
-print("=" * 60)
-
-
-with rasterio.open(
-    LULC_2024_PATH
-) as src:
+with rasterio.open(LULC_2024_PATH) as src:
 
     lulc_2024 = src.read(1)
 
-    lulc_width = src.width
-    lulc_height = src.height
+    if (
+        src.width != width
+        or src.height != height
+        or src.crs != crs
+        or src.transform != transform
+    ):
+        raise ValueError(
+            "The LULC raster and persistent rasters "
+            "are not aligned."
+        )
 
-    lulc_crs = src.crs
-    lulc_transform = src.transform
 
+if crs is None:
+    raise ValueError("Input rasters have no CRS.")
 
-print(
-    "Unique values:",
-    np.unique(lulc_2024)
-)
+if not crs.is_projected:
+    raise ValueError(
+        "Use a projected CRS measured in metres "
+        "for area calculations."
+    )
+
+print("[OK] All input rasters are aligned.")
+print("[OK] CRS:", crs)
 
 
 # ============================================================
-# 9. CHECK ALIGNMENT
+# 5. CONVERT MASK INTO POLYGONS
 # ============================================================
 
-print("\n")
-print("=" * 60)
-print("CHECKING RASTER ALIGNMENT")
-print("=" * 60)
+def mask_to_polygons(mask, raster_transform, raster_crs):
+    """
+    Convert True pixels into polygon geometries.
+    """
 
+    mask = np.asarray(mask, dtype=bool)
 
-if width_1 != width_2:
+    polygon_list = []
 
-    raise ValueError(
-        "Persistent rasters have different widths."
+    polygon_generator = shapes(
+        mask.astype(np.uint8),
+        mask=mask,
+        transform=raster_transform,
+        connectivity=8
     )
 
+    for geometry, value in polygon_generator:
 
-if height_1 != height_2:
+        if value == 1:
 
-    raise ValueError(
-        "Persistent rasters have different heights."
+            polygon_list.append(
+                shape(geometry)
+            )
+
+    return gpd.GeoDataFrame(
+        {"geometry": polygon_list},
+        geometry="geometry",
+        crs=raster_crs
     )
-
-
-if width_1 != lulc_width:
-
-    raise ValueError(
-        "Persistent raster and LULC have different widths."
-    )
-
-
-if height_1 != lulc_height:
-
-    raise ValueError(
-        "Persistent raster and LULC have different heights."
-    )
-
-
-if crs_1 != crs_2:
-
-    raise ValueError(
-        "Persistent rasters have different CRS."
-    )
-
-
-if crs_1 != lulc_crs:
-
-    raise ValueError(
-        "Persistent raster and LULC have different CRS."
-    )
-
-
-if transform_1 != transform_2:
-
-    raise ValueError(
-        "Persistent rasters have different transforms."
-    )
-
-
-if transform_1 != lulc_transform:
-
-    raise ValueError(
-        "Persistent raster and LULC have different transforms."
-    )
-
-
-print("[OK] Width matches")
-print("[OK] Height matches")
-print("[OK] CRS matches")
-print("[OK] Transform matches")
-
-print("\n[OK] All rasters are aligned.")
 
 
 # ============================================================
-# 10. CONVERT PERSISTENT RASTERS TO BOOLEAN
-# ============================================================
-#
-# 0   = Not persistent encroachment
-# 255 = Persistent encroachment
-#
+# 6. INTERSECT PERSISTENT AND BUILT-UP POLYGONS
 # ============================================================
 
-persistent_2023 = (
-    persistent_2017_2023 > 0
-)
+def detect_potential_encroachment(
+    persistent_mask,
+    built_up_mask,
+    raster_transform,
+    raster_crs
+):
+    """
+    Identify potential encroachment through geometric
+    intersection of persistent encroachment polygons
+    and 2024 built-up polygons.
+    """
 
+    print("\nConverting persistent areas into polygons...")
 
-persistent_2024 = (
-    persistent_2017_2024 > 0
-)
+    persistent_gdf = mask_to_polygons(
+        persistent_mask,
+        raster_transform,
+        raster_crs
+    )
+
+    print(
+        "Persistent polygons:",
+        len(persistent_gdf)
+    )
+
+    print("\nConverting built-up areas into polygons...")
+
+    built_up_gdf = mask_to_polygons(
+        built_up_mask,
+        raster_transform,
+        raster_crs
+    )
+
+    print(
+        "Built-up polygons:",
+        len(built_up_gdf)
+    )
+
+    if persistent_gdf.empty or built_up_gdf.empty:
+
+        return gpd.GeoDataFrame(
+            {"geometry": []},
+            geometry="geometry",
+            crs=raster_crs
+        )
+
+    print("\nPerforming geometric intersection...")
+
+    # Spatial intersection of the two polygon layers.
+    potential_gdf = gpd.overlay(
+        persistent_gdf,
+        built_up_gdf,
+        how="intersection",
+        keep_geom_type=True
+    )
+
+    # Remove empty or zero-area geometries.
+    potential_gdf = potential_gdf[
+        (~potential_gdf.geometry.is_empty)
+        & (potential_gdf.geometry.area > 0)
+    ].copy()
+
+    potential_gdf = potential_gdf.reset_index(drop=True)
+
+    print(
+        "Potential encroachment polygons:",
+        len(potential_gdf)
+    )
+
+    return potential_gdf
 
 
 # ============================================================
-# 11. IDENTIFY BUILT-UP AREA
+# 7. PREPARE 2024 BUILT-UP MASK
 # ============================================================
 
 built_up_2024 = (
     lulc_2024 == BUILT_UP_CLASS
 )
 
-
-# ============================================================
-# 12. POTENTIAL ENCROACHMENT
-# ============================================================
-#
-# Persistent encroachment
-# AND
-# 2024 built-up
-#
-# ============================================================
-
-potential_2017_2023 = (
-
-    persistent_2023
-    &
-    built_up_2024
-
-)
-
-
-potential_2017_2024 = (
-
-    persistent_2024
-    &
-    built_up_2024
-
-)
+persistent_masks = {
+    "2017_2023": persistent_2017_2023 > 0,
+    "2017_2024": persistent_2017_2024 > 0
+}
 
 
 # ============================================================
-# 13. CONVERT TO OUTPUT RASTER
-# ============================================================
-#
-# 0   = Not potential encroachment
-# 255 = Potential encroachment
-#
+# 8. SAVE POLYGONS AND RASTERIZE RESULTS
 # ============================================================
 
-output_1 = (
-    potential_2017_2023
-    .astype(np.uint8)
-    * 255
-)
+def process_period(
+    period_name,
+    persistent_mask,
+    geojson_path,
+    raster_output_path,
+    display_output_path
+):
+    print("\n" + "=" * 60)
+    print("PROCESSING:", period_name)
+    print("=" * 60)
 
+    # Detect potential encroachment using polygons.
+    potential_gdf = detect_potential_encroachment(
+        persistent_mask,
+        built_up_2024,
+        transform,
+        crs
+    )
 
-output_2 = (
-    potential_2017_2024
-    .astype(np.uint8)
-    * 255
-)
+    # Calculate polygon-based area in square metres.
+    if potential_gdf.empty:
+        total_area_m2 = 0.0
+    else:
+        total_area_m2 = float(
+            potential_gdf.geometry.area.sum()
+        )
+
+    total_area_ha = total_area_m2 / 10000.0
+
+    # Save the vector result.
+    if not potential_gdf.empty:
+        potential_gdf.to_file(
+            geojson_path,
+            driver="GeoJSON"
+        )
+    else:
+        print(
+            "No intersecting polygons found; "
+            "GeoJSON was not created."
+        )
+
+    # Rasterize the intersection polygons so the
+    # existing GeoTIFF workflow remains compatible.
+    if potential_gdf.empty:
+
+        output_array = np.zeros(
+            (height, width),
+            dtype=np.uint8
+        )
+
+    else:
+
+        raster_shapes = (
+            (geometry, 255)
+            for geometry in potential_gdf.geometry
+        )
+
+        output_array = rasterize(
+            raster_shapes,
+            out_shape=(height, width),
+            transform=transform,
+            fill=0,
+            dtype=np.uint8,
+            all_touched=False
+        )
+
+    # Preserve the original output raster settings.
+    output_profile = profile.copy()
+
+    output_profile.update(
+        driver="GTiff",
+        height=height,
+        width=width,
+        count=1,
+        dtype="uint8",
+        nodata=0,
+        compress="lzw"
+    )
+
+    # Save analytical GeoTIFF.
+    with rasterio.open(
+        raster_output_path,
+        "w",
+        **output_profile
+    ) as dst:
+
+        dst.write(output_array, 1)
+
+    # Save display GeoTIFF.
+    with rasterio.open(
+        display_output_path,
+        "w",
+        **output_profile
+    ) as dst:
+
+        dst.write(output_array, 1)
+
+    # Pixel count is retained for comparison with
+    # the original report. Area comes from polygons.
+    pixel_count = int(
+        np.count_nonzero(output_array == 255)
+    )
+
+    print("GeoTIFF:", raster_output_path)
+    print("Display:", display_output_path)
+    print("Polygons:", geojson_path)
+    print("Pixels:", pixel_count)
+    print("Polygon area:", total_area_m2, "m²")
+    print("Polygon area:", total_area_ha, "ha")
+
+    return {
+        "period": period_name,
+        "pixels": pixel_count,
+        "area_m2": total_area_m2,
+        "area_ha": total_area_ha
+    }
 
 
 # ============================================================
-# 14. OUTPUT PROFILE
+# 9. PROCESS 2017 -> 2023
 # ============================================================
 
-output_profile = profile_1.copy()
-
-
-output_profile.update(
-
-    driver="GTiff",
-
-    dtype="uint8",
-
-    count=1,
-
-    nodata=0,
-
-    compress="lzw"
-
-)
-
-
-# ============================================================
-# 15. SAVE 2017->2023 POTENTIAL ENCROACHMENT
-# ============================================================
-
-with rasterio.open(
-
+result_2017_2023 = process_period(
+    "2017->2023",
+    persistent_masks["2017_2023"],
+    GEOJSON_2017_2023,
     OUTPUT_2017_2023,
-
-    "w",
-
-    **output_profile
-
-) as dst:
-
-    dst.write(
-
-        output_1,
-
-        1
-
-    )
-
-
-print("\n")
-print(
-    "Potential encroachment 2017->2023 saved:"
-)
-
-print(
-    OUTPUT_2017_2023
-)
-
-
-# ============================================================
-# 16. SAVE 2017->2024 POTENTIAL ENCROACHMENT
-# ============================================================
-
-with rasterio.open(
-
-    OUTPUT_2017_2024,
-
-    "w",
-
-    **output_profile
-
-) as dst:
-
-    dst.write(
-
-        output_2,
-
-        1
-
-    )
-
-
-print("\n")
-print(
-    "Potential encroachment 2017->2024 saved:"
-)
-
-print(
-    OUTPUT_2017_2024
-)
-
-
-# ============================================================
-# 17. SAVE DISPLAY 2017->2023
-# ============================================================
-
-with rasterio.open(
-
-    DISPLAY_2017_2023,
-
-    "w",
-
-    **output_profile
-
-) as dst:
-
-    dst.write(
-
-        output_1,
-
-        1
-
-    )
-
-
-print(
-    "\nDisplay raster 2017->2023 saved:"
-)
-
-print(
     DISPLAY_2017_2023
 )
 
 
 # ============================================================
-# 18. SAVE DISPLAY 2017->2024
+# 10. PROCESS 2017 -> 2024
 # ============================================================
 
-with rasterio.open(
-
-    DISPLAY_2017_2024,
-
-    "w",
-
-    **output_profile
-
-) as dst:
-
-    dst.write(
-
-        output_2,
-
-        1
-
-    )
-
-
-print(
-    "\nDisplay raster 2017->2024 saved:"
-)
-
-print(
+result_2017_2024 = process_period(
+    "2017->2024",
+    persistent_masks["2017_2024"],
+    GEOJSON_2017_2024,
+    OUTPUT_2017_2024,
     DISPLAY_2017_2024
 )
 
 
 # ============================================================
-# 19. POLYGON AREA FUNCTION
-# ============================================================
-#
-# Converts potential encroachment pixels into polygons
-# and calculates their geometric area.
-#
-# EPSG:32644 uses meters, so area is in m².
-#
+# 11. WRITE CSV REPORT
 # ============================================================
 
-def calculate_polygon_area(
-    mask,
-    transform,
-    crs
-):
+with open(
+    REPORT_PATH,
+    "w",
+    newline="",
+    encoding="utf-8"
+) as report_file:
 
-    polygons = []
-
-    for geom, value in shapes(
-        mask.astype(np.uint8),
-        mask=mask,
-        transform=transform
-    ):
-
-        polygons.append(
-            shape(geom)
-        )
-
-
-    if len(polygons) == 0:
-
-        return 0.0
-
-
-    gdf = gpd.GeoDataFrame(
-        geometry=polygons,
-        crs=crs
-    )
-
-
-    gdf["area_m2"] = (
-        gdf.geometry.area
-    )
-
-
-    total_area_m2 = (
-        gdf["area_m2"].sum()
-    )
-
-
-    return total_area_m2
-
-
-# ============================================================
-# 20. CALCULATE POTENTIAL ENCROACHMENT AREA
-# ============================================================
-#
-# Polygon-based area calculation.
-#
-# ============================================================
-
-area_2017_2023_m2 = calculate_polygon_area(
-    potential_2017_2023,
-    transform_1,
-    crs_1
-)
-
-
-area_2017_2024_m2 = calculate_polygon_area(
-    potential_2017_2024,
-    transform_1,
-    crs_1
-)
-
-
-# Convert m² -> hectares
-
-area_2017_2023_ha = (
-    area_2017_2023_m2 / 10000
-)
-
-
-area_2017_2024_ha = (
-    area_2017_2024_m2 / 10000
-)
-
-report_path = os.path.join(
-    OUTPUT_FOLDER,
-    "potential_encroachment_report.csv"
-)
-with open(report_path, "w", newline="", encoding="utf-8") as report_file:
     writer = csv.writer(report_file)
-    writer.writerow(["From Year", "To Year", "Pixels", "Area (m2)", "Area (ha)"])
+
     writer.writerow([
-        2017,
-        2023,
-        int(np.sum(potential_2017_2023)),
-        area_2017_2023_m2,
-        area_2017_2023_ha,
-    ])
-    writer.writerow([
-        2017,
-        2024,
-        int(np.sum(potential_2017_2024)),
-        area_2017_2024_m2,
-        area_2017_2024_ha,
+        "From Year",
+        "To Year",
+        "Pixels",
+        "Area (m2)",
+        "Area (ha)"
     ])
 
+    for result, to_year in [
+        (result_2017_2023, 2023),
+        (result_2017_2024, 2024)
+    ]:
 
-# ============================================================
-# 21. PRINT AREA
-# ============================================================
-
-print("\n")
-print("=" * 60)
-print("POTENTIAL ENCROACHMENT AREA")
-print("=" * 60)
-
-
-print(
-    "\n2017->2023:"
-)
-
-print(
-    "Area:",
-    area_2017_2023_m2,
-    "m²"
-)
-
-print(
-    "Area:",
-    area_2017_2023_ha,
-    "ha"
-)
-
-
-print(
-    "\n2017->2024:"
-)
-
-print(
-    "Area:",
-    area_2017_2024_m2,
-    "m²"
-)
-
-print(
-    "Area:",
-    area_2017_2024_ha,
-    "ha"
-)
+        writer.writerow([
+            2017,
+            to_year,
+            result["pixels"],
+            result["area_m2"],
+            result["area_ha"]
+        ])
 
 
 # ============================================================
-# 22. FINAL
+# 12. FINAL SUMMARY
 # ============================================================
 
-print("\n")
-print("=" * 60)
+print("\n" + "=" * 60)
 print("MODULE 05 COMPLETED")
 print("=" * 60)
 
 print(
-    "Persistent encroachment was combined with"
+    "Detection method: polygon geometric intersection"
 )
 
 print(
-    "2024 Dynamic World Built-up class."
+    "Input classes: persistent encroachment and "
+    "2024 built-up (class 6)"
 )
 
-print(
-    "\nPotential encroachment area was calculated"
-)
-
-print(
-    "using polygon geometry."
-)
-
-print("\nOutput folder:")
-print(OUTPUT_FOLDER)
+print("CSV report:", REPORT_PATH)
+print("Output folder:", OUTPUT_FOLDER)
 
 print("=" * 60)

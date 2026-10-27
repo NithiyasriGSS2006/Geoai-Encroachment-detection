@@ -335,6 +335,27 @@ async function startServer() {
     });
   });
 
+  app.get('/api/drainage/geojson', (_req, res) => {
+    if (!fs.existsSync(DRAINAGE_GEOJSON_PATH)) {
+      return res.status(404).json({ error: 'Drainage GeoJSON not found on backend.' });
+    }
+    res.type('application/json');
+    return res.sendFile(DRAINAGE_GEOJSON_PATH);
+  });
+
+  app.get('/api/hydrology/streamlines', (_req, res) => {
+    const streamlinesPath = path.join(
+      DATA_DIR,
+      'water_flow_impact',
+      'flow_network_streamlines.geojson'
+    );
+    if (!fs.existsSync(streamlinesPath)) {
+      return res.status(404).json({ error: 'Streamlines GeoJSON not generated yet.' });
+    }
+    res.type('application/json');
+    return res.sendFile(streamlinesPath);
+  });
+
   app.get('/api/satellite-images', (_req, res) => {
     const images = fs.readdirSync(REFERENCE_SATELLITE_DIR)
       .map((filename) => {

@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "encroachment_lulc_1_trees",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::32644" } },
+"features": [
+{ "type": "Feature", "properties": { "class_value": 1, "class_name": "Trees", "area_m2": 100.0 }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 415480.0, 1436470.0 ], [ 415490.0, 1436470.0 ], [ 415490.0, 1436460.0 ], [ 415480.0, 1436460.0 ], [ 415480.0, 1436470.0 ] ] ] } }
+]
+}

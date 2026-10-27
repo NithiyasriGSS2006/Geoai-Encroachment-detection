@@ -1,0 +1,3 @@
+historical_object_id,current_object_id,historical_object_area_m2,current_object_area_m2,overlap_area_m2,iou,historical_retention_ratio,current_overlap_ratio,historical_overlap_degree,current_overlap_degree,historical_overlap_total_m2,current_overlap_total_m2
+1,1,2200.0,2500.0,1900.0,0.6785714285714286,0.8636363636363636,0.76,1,1,1900.0,1900.0
+2,2,214400.0,195800.0,195400.0,0.909683426443203,0.9113805970149254,0.9979570990806946,1,1,195400.0,195400.0

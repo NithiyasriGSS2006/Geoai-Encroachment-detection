@@ -64,6 +64,15 @@ import { CmdaGovFooter } from './components/CmdaGovFooter';
 
 type WorkflowStep = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
+const HIDDEN_PIPELINE_LAYER_FILES = new Set([
+  'runoff_before_2017_mm_RGB.tif',
+  'runoff_after_2024_mm_RGB.tif',
+  'rgb_02_potential_encroachment.tif',
+  'rgb_01_full_study_area_runoff_change.tif',
+  'rgb_03_runoff_change_encroachment_overlay.tif',
+  'rgb_04_positive_runoff_increase_full_area.tif',
+]);
+
 const WORKFLOW_STEPS: {
   id: WorkflowStep;
   numberLabel: string;
@@ -1047,7 +1056,11 @@ export default function App() {
             stageId: stage.id,
             stageTitle: stage.title,
           }))
-        ).filter((layer) => !analysisLayerFilesRef.current.has(layer.filename));
+        ).filter(
+          (layer) =>
+            !HIDDEN_PIPELINE_LAYER_FILES.has(layer.filename) &&
+            !analysisLayerFilesRef.current.has(layer.filename)
+        );
         newLayers.forEach((layer) => analysisLayerFilesRef.current.add(layer.filename));
 
         const settledLayers = await Promise.allSettled(newLayers.map(async (layer) => {
@@ -2042,7 +2055,7 @@ export default function App() {
 
                   <div className="p-4 rounded bg-slate-950/80 border border-slate-800">
                     <div className="text-xs text-slate-400">
-                      Study Area (Velachery)
+                      Lake Area
                     </div>
                     <div className="text-2xl font-mono font-bold text-slate-100 tabular-nums mt-1">
                       {persistentWater.stats.studyAreaKm2.toFixed(2)}{' '}
@@ -2555,17 +2568,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="p-3.5 rounded bg-slate-950/80 border border-slate-800">
-                    <div className="text-xs text-slate-400">
-                      % of Historical Lake Zone
-                    </div>
-                    <div className="text-lg font-mono font-bold text-amber-300 tabular-nums mt-1">
-                      {encroachment.stats.percentageOfHistoricalWater.toFixed(
-                        2
-                      )}
-                      %
-                    </div>
-                  </div>
                 </div>
               </div>
 
@@ -2872,11 +2874,11 @@ export default function App() {
                         <Activity className="w-3.5 h-3.5 text-amber-400" />
                       </div>
                       <div className="text-xl font-mono font-bold text-amber-300 tabular-nums mt-1.5">
-                        {waterChange.overallComparison.stats.changedAreaKm2.toFixed(
-                          3
+                        {waterChange.overallComparison.stats.changedAreaHa.toFixed(
+                          2
                         )}{' '}
                         <span className="text-xs font-normal text-slate-400">
-                          km²
+                          ha
                         </span>
                       </div>
                       <div className="text-[11px] font-mono text-slate-400 mt-1">

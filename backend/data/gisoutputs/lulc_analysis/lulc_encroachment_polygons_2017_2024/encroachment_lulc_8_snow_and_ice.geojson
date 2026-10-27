@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "encroachment_lulc_8_snow_and_ice",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::32644" } },
+"features": [
+
+]
+}

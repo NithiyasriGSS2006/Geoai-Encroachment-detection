@@ -350,7 +350,7 @@ export const WaterChangeStepView: React.FC<WaterChangeStepViewProps> = ({
                         Water Change
                       </div>
                       <div className="text-sm font-bold text-slate-100">
-                        {comp.stats.changedAreaKm2.toFixed(3)} km²
+                        {comp.stats.changedAreaHa.toFixed(2)} ha
                       </div>
                     </div>
                     <div className="text-right">
@@ -358,8 +358,8 @@ export const WaterChangeStepView: React.FC<WaterChangeStepViewProps> = ({
                         Loss / Gain
                       </div>
                       <div className="text-[11px] text-rose-400">
-                        -{comp.stats.decreaseAreaKm2.toFixed(3)} / +
-                        {comp.stats.increaseAreaKm2.toFixed(3)} km²
+                        -{comp.stats.decreaseAreaHa.toFixed(2)} / +
+                        {comp.stats.increaseAreaHa.toFixed(2)} ha
                       </div>
                     </div>
                   </div>
@@ -413,10 +413,6 @@ export const WaterChangeStepView: React.FC<WaterChangeStepViewProps> = ({
           <div className="p-3.5 rounded bg-slate-950/80 border border-slate-800">
             <div className="text-xs text-slate-400">Changed Area</div>
             <div className="text-lg font-mono font-bold text-slate-100 tabular-nums mt-1">
-              {activeComp.stats.changedAreaKm2.toFixed(3)}{' '}
-              <span className="text-xs font-normal text-slate-400">km²</span>
-            </div>
-            <div className="text-[11px] font-mono text-slate-400 tabular-nums mt-0.5">
               {activeComp.stats.changedAreaHa.toFixed(2)} ha
             </div>
           </div>
@@ -429,26 +425,16 @@ export const WaterChangeStepView: React.FC<WaterChangeStepViewProps> = ({
           </div>
 
           <div className="p-3.5 rounded bg-slate-950/80 border border-slate-800">
-            <div className="text-xs text-slate-400">Increase Area</div>
+            <div className="text-xs text-slate-400">Increase Water Area</div>
             <div className="text-lg font-mono font-bold text-cyan-400 tabular-nums mt-1">
-              {activeComp.stats.increaseAreaKm2.toFixed(3)}{' '}
-              <span className="text-xs font-normal text-slate-400">km²</span>
+              {activeComp.stats.increaseAreaHa.toFixed(2)} ha
             </div>
           </div>
 
           <div className="p-3.5 rounded bg-slate-950/80 border border-slate-800">
-            <div className="text-xs text-slate-400">Decrease Area</div>
+            <div className="text-xs text-slate-400">Decreased Water Area</div>
             <div className="text-lg font-mono font-bold text-rose-400 tabular-nums mt-1">
-              {activeComp.stats.decreaseAreaKm2.toFixed(3)}{' '}
-              <span className="text-xs font-normal text-slate-400">km²</span>
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded bg-slate-950/80 border border-slate-800">
-            <div className="text-xs text-slate-400">Analysed Area</div>
-            <div className="text-lg font-mono font-bold text-slate-100 tabular-nums mt-1">
-              {activeComp.stats.analysedAreaKm2.toFixed(2)}{' '}
-              <span className="text-xs font-normal text-slate-400">km²</span>
+              {activeComp.stats.decreaseAreaHa.toFixed(2)} ha
             </div>
           </div>
 

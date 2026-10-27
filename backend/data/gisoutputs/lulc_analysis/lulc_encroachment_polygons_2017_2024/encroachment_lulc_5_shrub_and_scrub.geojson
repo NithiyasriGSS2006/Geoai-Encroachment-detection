@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "encroachment_lulc_5_shrub_and_scrub",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::32644" } },
+"features": [
+
+]
+}

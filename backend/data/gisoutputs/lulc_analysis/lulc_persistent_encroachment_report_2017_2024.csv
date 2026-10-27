@@ -1,10 +1,10 @@
-LULC Value,LULC Class,Pixel Count,Area (m2),Area (ha),Percentage of Persistent Encroachment
-0,Water,51,5100.0,0.51,20.56451612903226
-1,Trees,0,0.0,0.0,0.0
-2,Grass,3,300.0,0.03,1.2096774193548387
+LULC Value,LULC Class,Rasterized Cell Count,Polygon Area (m2),Polygon Area (ha),Percentage of Potential Encroachment Area
+0,Water,8,800.0,0.08,6.557377049180328
+1,Trees,1,100.0,0.01,0.819672131147541
+2,Grass,0,0.0,0.0,0.0
 3,Flooded vegetation,0,0.0,0.0,0.0
-4,Crops,2,200.0,0.02,0.8064516129032258
+4,Crops,0,0.0,0.0,0.0
 5,Shrub and scrub,0,0.0,0.0,0.0
-6,Built-up,192,19200.0,1.92,77.41935483870968
+6,Built-up,113,11300.0,1.13,92.62295081967213
 7,Bare ground,0,0.0,0.0,0.0
 8,Snow and ice,0,0.0,0.0,0.0

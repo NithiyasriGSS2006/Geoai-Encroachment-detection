@@ -1,0 +1,9 @@
+year_pair,reference_year,object_id,reference_area_ha,related_objects_in_other_year,lost_area_ha,change_class,gained_area_ha
+2017_2020,2017,1,0.19,1,0.0,No detected loss,
+2017_2020,2017,2,21.66,1,1.73,Contracted,
+2017_2020,2020,1,0.55,1,0.0,Expanded,0.36
+2017_2020,2020,2,0.02,0,0.0,New water body,0.02
+2017_2020,2020,3,0.09,0,0.0,New water body,0.09
+2017_2020,2020,4,0.01,0,0.0,New water body,0.01
+2017_2020,2020,5,0.03,0,0.0,New water body,0.03
+2017_2020,2020,6,20.8,1,0.0,Expanded,0.87

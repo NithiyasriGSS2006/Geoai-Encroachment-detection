@@ -295,8 +295,6 @@ for index, image_path in enumerate(image_paths):
 
     # ========================================================
     # 5.4 READ AOI DIMENSIONS FROM REFERENCE TIF
-    #
-    # NO HARD-CODED AOI DIMENSIONS
     # ========================================================
 
     with rasterio.open(reference_tif) as src:
@@ -561,7 +559,7 @@ for index, image_path in enumerate(image_paths):
     # Example:
     # 128 × 128 → 218 × 84
     #
-    # But now 218 × 84 is NOT hard-coded.
+    # 
     # ========================================================
 
     predicted_mask = cv2.resize(

@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "encroachment_lulc_3_flooded_vegetation",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::32644" } },
+"features": [
+
+]
+}

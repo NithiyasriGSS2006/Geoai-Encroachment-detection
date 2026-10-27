@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "condition2_new_loss_2017_2020_to_2023",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::32644" } },
+"features": [
+
+]
+}

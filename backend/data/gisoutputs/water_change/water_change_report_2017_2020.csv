@@ -1,22 +1,31 @@
 Parameter,Value
+Methodology,Polygon-based geometric change detection
 Historical Year,2017
 Current Year,2020
-Pixel Size (m),10.0
+CRS,EPSG:32644
+Pixel Size X (m),10.0
+Pixel Size Y (m),10.0
 Pixel Area (m2),100.0
-Historical Water Pixels,2178
-Historical Water Area (ha),21.78
-Current Water Pixels,2027
-Current Water Area (ha),20.27
-Water Loss Pixels,222
-Water Loss Area (m2),22200.0
-Water Loss (ha),2.22
-Water Gain Pixels,71
-Water Gain Area (m2),7100.0
-Water Gain (ha),0.71
-Persistent Water Pixels,1956
-Persistent Water (ha),19.56
-Net Water Change (ha),-1.51
-Percentage Change (%),-6.932966023875115
-Persistent Non-water Pixels,16063
-Water Loss Transition Pixels,222
-Water Gain Transition Pixels,71
+Historical Water Objects,2
+Historical Water Pixels (input mask statistic),2185
+Historical Water Area (m2),218500.0
+Historical Water Area (ha),21.85
+Current Water Objects,6
+Current Water Pixels (input mask statistic),2150
+Current Water Area (m2),215000.0
+Current Water Area (ha),21.5
+Water Loss Polygon Count,15
+Water Loss Area (m2),17300.0
+Water Loss (ha),1.73
+Water Gain Polygon Count,33
+Water Gain Area (m2),13800.0
+Water Gain (ha),1.38
+Net Water Change (ha),-0.35
+Percentage Change (%),-1.6018306636155606
+Object Intersection Relationships,2
+Persistent Assessment,Not performed
+Transition Matrix,Not performed; pixel-wise method removed
+Object-level Report,C:\Users\nithi\Downloads\project_geoAI (2) - Copy\project_geoAI\backend\data\gisoutputs\water_change\water_object_change_report_2017_2020.csv
+Object Relationships GeoJSON,C:\Users\nithi\Downloads\project_geoAI (2) - Copy\project_geoAI\backend\data\gisoutputs\water_change\water_object_relationships_2017_2020.geojson
+Water Loss Polygons GeoJSON,C:\Users\nithi\Downloads\project_geoAI (2) - Copy\project_geoAI\backend\data\gisoutputs\water_change\water_loss_polygons_2017_2020.geojson
+Water Gain Polygons GeoJSON,C:\Users\nithi\Downloads\project_geoAI (2) - Copy\project_geoAI\backend\data\gisoutputs\water_change\water_gain_polygons_2017_2020.geojson

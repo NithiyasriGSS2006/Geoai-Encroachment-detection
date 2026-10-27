@@ -28,6 +28,7 @@ import {
   EyeOff,
   Sliders,
   MapPin,
+  Navigation,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -45,6 +46,7 @@ import {
   reprojectGeoTiffToWebMercator,
 } from '../utils/geotiffEngine';
 import type { AnalysisPipelineMapPoint } from './AnalysisPipelinePanel';
+import { GoogleMapsFlowNetwork } from './GoogleMapsFlowNetwork';
 
 interface VelacheryGeoMapProps {
   raster: ParsedGeoTiff | null;
@@ -298,6 +300,7 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
   const [showBoundaryBox, setShowBoundaryBox] = useState<boolean>(true);
   const [showLandmarks, setShowLandmarks] = useState<boolean>(!compact);
   const [transparentZero, setTransparentZero] = useState<boolean>(true);
+  const [flowMode, setFlowMode] = useState<'network' | 'raster'>('network');
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [fitCount, setFitCount] = useState<number>(0);
   const [hoverInfo, setHoverInfo] = useState<{
@@ -352,6 +355,8 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
       ? SLOPE_LEGEND
       : legend
     : legend;
+  const isFlowRaster = Boolean(displayRaster && isFlowDirectionRaster(displayRaster));
+  const isFlowNetworkMode = isFlowRaster && flowMode === 'network';
 
   const handleFitStudyArea = () => {
     setFitCount((c) => c + 1);
@@ -477,6 +482,34 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
               Landmarks
             </button>
 
+            {isFlowRaster && (
+              <div className="flex items-center bg-slate-950 border border-cyan-500/50 rounded p-0.5 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setFlowMode('network')}
+                  className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded whitespace-nowrap ${
+                    flowMode === 'network'
+                      ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/50'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Navigation className="w-3.5 h-3.5 text-cyan-400" />
+                  Flow Network
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFlowMode('raster')}
+                  className={`px-2 py-1 text-[11px] font-medium rounded whitespace-nowrap ${
+                    flowMode === 'raster'
+                      ? 'bg-slate-800 text-slate-100 border border-slate-700'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Raw D8 Grid
+                </button>
+              </div>
+            )}
+
             {/* Fit to Study Area Button */}
             <button
               type="button"
@@ -542,8 +575,15 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
             onHoverPixel={setHoverInfo}
           />
 
+          <GoogleMapsFlowNetwork
+            visible={isFlowRaster && flowMode === 'network'}
+            flowDirectionRaster={displayRaster}
+          />
+
           {/* Georeferenced GeoTIFF Raster Overlay */}
-          {showRasterLayer && rasterDataUrl && (
+          {showRasterLayer &&
+            rasterDataUrl &&
+            (!isFlowRaster || flowMode === 'raster') && (
             <ImageOverlay
               url={rasterDataUrl}
               bounds={leafletBounds}
@@ -554,6 +594,7 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
           )}
 
           {raster &&
+            !isFlowNetworkMode &&
             isHistoricalFloodPointsRaster(raster) &&
             historicalFloodPoints.length > 0 && (
             <Pane name="historicalFloodPoints" style={{ zIndex: 650 }}>
@@ -584,7 +625,7 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
           )}
 
           {/* Authoritative GeoTIFF Bounding Box Outline */}
-          {showBoundaryBox && (
+          {showBoundaryBox && !isFlowNetworkMode && (
             <Rectangle
               bounds={leafletBounds}
               pathOptions={{
@@ -598,6 +639,7 @@ export const VelacheryGeoMap: React.FC<VelacheryGeoMapProps> = ({
 
           {/* Velachery Hydrological Reference Markers */}
           {showLandmarks &&
+            !isFlowNetworkMode &&
             VELACHERY_LANDMARKS.map((pt) => (
               <CircleMarker
                 key={pt.name}

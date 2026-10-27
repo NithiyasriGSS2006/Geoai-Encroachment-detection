@@ -1,0 +1,14 @@
+{
+"type": "FeatureCollection",
+"name": "water_gain_polygons_2017_2024",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::32644" } },
+"features": [
+{ "type": "Feature", "properties": { "change_id": 1, "change_type": "Water gain", "area_m2": 200.0, "area_ha": 0.02, "historical_year": 2017, "current_year": 2024 }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 414960.0, 1435980.0 ], [ 414960.0, 1435970.0 ], [ 414940.0, 1435970.0 ], [ 414940.0, 1435980.0 ], [ 414960.0, 1435980.0 ] ] ] } },
+{ "type": "Feature", "properties": { "change_id": 2, "change_type": "Water gain", "area_m2": 100.0, "area_ha": 0.01, "historical_year": 2017, "current_year": 2024 }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 413860.0, 1435990.0 ], [ 413870.0, 1435990.0 ], [ 413870.0, 1435980.0 ], [ 413860.0, 1435980.0 ], [ 413860.0, 1435990.0 ] ] ] } },
+{ "type": "Feature", "properties": { "change_id": 3, "change_type": "Water gain", "area_m2": 200.0, "area_ha": 0.02, "historical_year": 2017, "current_year": 2024 }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 413870.0, 1436000.0 ], [ 413890.0, 1436000.0 ], [ 413890.0, 1435990.0 ], [ 413870.0, 1435990.0 ], [ 413870.0, 1436000.0 ] ] ] } },
+{ "type": "Feature", "properties": { "change_id": 4, "change_type": "Water gain", "area_m2": 400.0, "area_ha": 0.04, "historical_year": 2017, "current_year": 2024 }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 414120.0, 1436020.0 ], [ 414120.0, 1436010.0 ], [ 414080.0, 1436010.0 ], [ 414080.0, 1436020.0 ], [ 414120.0, 1436020.0 ] ] ] } },
+{ "type": "Feature", "properties": { "change_id": 5, "change_type": "Water gain", "area_m2": 200.0, "area_ha": 0.02, "historical_year": 2017, "current_year": 2024 }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 414150.0, 1436020.0 ], [ 414170.0, 1436020.0 ], [ 414170.0, 1436010.0 ], [ 414150.0, 1436010.0 ], [ 414150.0, 1436020.0 ] ] ] } },
+{ "type": "Feature", "properties": { "change_id": 6, "change_type": "Water gain", "area_m2": 100.0, "area_ha": 0.01, "historical_year": 2017, "current_year": 2024 }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 414200.0, 1436030.0 ], [ 414210.0, 1436030.0 ], [ 414210.0, 1436020.0 ], [ 414200.0, 1436020.0 ], [ 414200.0, 1436030.0 ] ] ] } },
+{ "type": "Feature", "properties": { "change_id": 7, "change_type": "Water gain", "area_m2": 100.0, "area_ha": 0.01, "historical_year": 2017, "current_year": 2024 }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 415350.0, 1436470.0 ], [ 415350.0, 1436480.0 ], [ 415360.0, 1436480.0 ], [ 415360.0, 1436470.0 ], [ 415350.0, 1436470.0 ] ] ] } }
+]
+}
